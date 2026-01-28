@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { ChatMessage } from '$lib/stores/chat';
-	import { Copy, Check } from 'lucide-svelte';
+	import { Copy, Check, ChevronDown, ChevronRight, Code } from 'lucide-svelte';
 	import { marked } from 'marked';
+	import { slide } from 'svelte/transition';
 
 	interface Props {
 		message: ChatMessage;
@@ -12,7 +13,7 @@
 	let { message, compact = false }: Props = $props();
 
 	let copied = $state(false);
-	let renderedContent = $state('');
+	let expandedBlocks = $state<Set<number>>(new Set());
 
 	onMount(() => {
 		marked.setOptions({
@@ -21,10 +22,47 @@
 		});
 	});
 
-	$effect(() => {
-		if (message.content) {
-			renderedContent = marked.parse(message.content) as string;
+	// Parse content to separate text and code blocks - now as a pure function
+	function parseContent(content: string) {
+		const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+		const blocks: Array<{ language: string; code: string; lineCount: number }>= [];
+		const parts: string[] = [];
+		let lastIndex = 0;
+		let match;
+
+		while ((match = codeBlockRegex.exec(content)) !== null) {
+			// Add text before this code block
+			if (match.index > lastIndex) {
+				const textBefore = content.slice(lastIndex, match.index);
+				parts.push(marked.parse(textBefore) as string);
+			}
+
+			// Add code block
+			const language = match[1] || 'code';
+			const code = match[2].trim();
+			const lineCount = code.split('\n').length;
+			blocks.push({ language, code, lineCount });
+			parts.push(`__CODE_BLOCK_${blocks.length - 1}__`);
+
+			lastIndex = match.index + match[0].length;
 		}
+
+		// Add remaining text
+		if (lastIndex < content.length) {
+			parts.push(marked.parse(content.slice(lastIndex)) as string);
+		}
+
+		return { blocks, parts };
+	}
+
+	// Use $derived instead of $effect to avoid state modifications during render
+	const parsedContent = $derived.by(() => {
+		if (!message.content) {
+			return { blocks: [] as Array<{ language: string; code: string; lineCount: number }>, parts: [] as string[], rendered: '' };
+		}
+		const parsed = parseContent(message.content);
+		const rendered = parsed.blocks.length === 0 ? marked.parse(message.content) as string : '';
+		return { blocks: parsed.blocks, parts: parsed.parts, rendered };
 	});
 
 	async function copyContent() {
@@ -32,36 +70,114 @@
 		copied = true;
 		setTimeout(() => (copied = false), 2000);
 	}
+
+	async function copyCode(code: string) {
+		await navigator.clipboard.writeText(code);
+	}
+
+	function toggleCodeBlock(index: number) {
+		const newSet = new Set(expandedBlocks);
+		if (newSet.has(index)) {
+			newSet.delete(index);
+		} else {
+			newSet.add(index);
+		}
+		expandedBlocks = newSet;
+	}
+
+	function isBlockExpanded(index: number): boolean {
+		return expandedBlocks.has(index);
+	}
+
+	function getPreviewLines(code: string, maxLines = 3): string {
+		return code.split('\n').slice(0, maxLines).join('\n');
+	}
 </script>
 
 {#if message.role === 'user'}
-	<!-- User message: right-aligned, primary color bubble -->
+	<!-- User message: clean pill, right-aligned -->
 	<div class="flex justify-end">
 		<div
-			class="max-w-[80%] rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-primary-foreground shadow-sm"
+			class="max-w-[85%] rounded-2xl rounded-br-md bg-primary/10 border border-primary/20 px-3.5 py-2 text-foreground"
 			class:px-3={compact}
-			class:py-2={compact}
+			class:py-1.5={compact}
 		>
 			<p class="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
 		</div>
 	</div>
 {:else}
-	<!-- Assistant message: clean, full-width, no bubble -->
+	<!-- Assistant message -->
 	<div class="group relative">
-		<div class="py-1">
+		<div class="py-0.5">
 			{#if message.isStreaming && !message.content}
 				<!-- Typing indicator -->
-				<div class="flex items-center gap-1.5 py-2">
-					<div class="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.3s]"></div>
-					<div class="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.15s]"></div>
-					<div class="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/50"></div>
+				<div class="flex items-center gap-1 py-2 px-1">
+					<div class="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/40 [animation-delay:-0.3s]"></div>
+					<div class="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/40 [animation-delay:-0.15s]"></div>
+					<div class="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/40"></div>
 				</div>
+			{:else if parsedContent.blocks.length > 0}
+				<!-- Message with code blocks -->
+				{#each parsedContent.parts as part, i}
+					{#if part.startsWith('__CODE_BLOCK_')}
+						{@const blockIndex = parseInt(part.replace('__CODE_BLOCK_', '').replace('__', ''))}
+						{@const block = parsedContent.blocks[blockIndex]}
+						{@const expanded = isBlockExpanded(blockIndex)}
+						<!-- Collapsible code block -->
+						<div class="my-2 rounded-lg border border-border/60 bg-muted/30 overflow-hidden">
+							<!-- Code header -->
+							<div class="flex items-center justify-between px-3 py-2 hover:bg-muted/50 transition-colors">
+								<button
+									type="button"
+									class="flex items-center gap-2 flex-1 text-left"
+									onclick={() => toggleCodeBlock(blockIndex)}
+								>
+									{#if expanded}
+										<ChevronDown class="h-3.5 w-3.5 text-muted-foreground" />
+									{:else}
+										<ChevronRight class="h-3.5 w-3.5 text-muted-foreground" />
+									{/if}
+									<Code class="h-3.5 w-3.5 text-muted-foreground" />
+									<span class="text-xs font-medium text-muted-foreground">{block.language}</span>
+									<span class="text-xs text-muted-foreground/60">{block.lineCount} lines</span>
+								</button>
+								<button
+									type="button"
+									class="p-1 hover:bg-muted rounded transition-colors"
+									onclick={() => copyCode(block.code)}
+									title="Copy code"
+								>
+									<Copy class="h-3 w-3 text-muted-foreground" />
+								</button>
+							</div>
+
+							<!-- Code content -->
+							{#if expanded}
+								<div transition:slide={{ duration: 150 }}>
+									<pre class="px-3 py-2 text-xs overflow-x-auto border-t border-border/40 bg-muted/20"><code>{block.code}</code></pre>
+								</div>
+							{:else}
+								<!-- Preview (first 3 lines) -->
+								<div class="px-3 py-2 border-t border-border/40">
+									<pre class="text-xs text-muted-foreground overflow-hidden"><code>{getPreviewLines(block.code)}{block.lineCount > 3 ? '\n...' : ''}</code></pre>
+								</div>
+							{/if}
+						</div>
+					{:else}
+						<div class="assistant-prose text-sm leading-relaxed text-foreground">
+							{@html part}
+						</div>
+					{/if}
+				{/each}
+				{#if message.isStreaming}
+					<span class="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-primary rounded-full"></span>
+				{/if}
 			{:else}
-				<!-- Message content -->
+				<!-- Simple message without code blocks -->
 				<div class="assistant-prose text-sm leading-relaxed text-foreground">
-					{@html renderedContent}
+					{@html parsedContent.rendered}
 					{#if message.isStreaming}
-						<span class="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-primary"></span>
+						<span class="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-primary rounded-full"></span>
 					{/if}
 				</div>
 			{/if}
@@ -71,14 +187,14 @@
 		{#if message.content && !message.isStreaming}
 			<button
 				type="button"
-				class="absolute -right-1 top-0 rounded-lg p-1.5 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+				class="absolute -right-1 top-0 rounded-md p-1 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
 				onclick={copyContent}
 				title="Copy message"
 			>
 				{#if copied}
-					<Check class="h-3.5 w-3.5 text-green-500" />
+					<Check class="h-3 w-3 text-green-500" />
 				{:else}
-					<Copy class="h-3.5 w-3.5 text-muted-foreground" />
+					<Copy class="h-3 w-3 text-muted-foreground" />
 				{/if}
 			</button>
 		{/if}
@@ -92,7 +208,7 @@
 	}
 
 	:global(.assistant-prose p) {
-		margin: 0.5em 0;
+		margin: 0.4em 0;
 	}
 
 	:global(.assistant-prose p:first-child) {
@@ -105,37 +221,37 @@
 
 	:global(.assistant-prose ul),
 	:global(.assistant-prose ol) {
-		margin: 0.5em 0;
+		margin: 0.4em 0;
 		padding-left: 1.25em;
 	}
 
 	:global(.assistant-prose li) {
-		margin: 0.25em 0;
+		margin: 0.2em 0;
 	}
 
 	:global(.assistant-prose strong) {
 		font-weight: 600;
 	}
 
-	/* Code blocks - light mode friendly */
-	:global(.assistant-prose pre) {
-		background-color: var(--color-muted);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-		padding: 1rem;
-		overflow-x: auto;
-		font-size: 0.8125rem;
-		margin: 0.75rem 0;
-		line-height: 1.5;
-	}
-
 	/* Inline code */
 	:global(.assistant-prose code) {
 		background-color: var(--color-muted);
-		padding: 0.125rem 0.375rem;
-		border-radius: 0.375rem;
-		font-size: 0.875em;
+		padding: 0.1rem 0.35rem;
+		border-radius: 0.25rem;
+		font-size: 0.85em;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	}
+
+	/* Code blocks rendered by marked (fallback) */
+	:global(.assistant-prose pre) {
+		background-color: var(--color-muted);
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.75rem;
+		overflow-x: auto;
+		font-size: 0.75rem;
+		margin: 0.5rem 0;
+		line-height: 1.5;
 	}
 
 	:global(.assistant-prose pre code) {
@@ -158,8 +274,8 @@
 	/* Blockquotes */
 	:global(.assistant-prose blockquote) {
 		border-left: 2px solid var(--color-border);
-		padding-left: 1rem;
-		margin: 0.75rem 0;
+		padding-left: 0.75rem;
+		margin: 0.5rem 0;
 		color: var(--color-muted-foreground);
 	}
 
@@ -169,41 +285,33 @@
 	:global(.assistant-prose h3),
 	:global(.assistant-prose h4) {
 		font-weight: 600;
-		margin: 1em 0 0.5em;
+		margin: 0.75em 0 0.4em;
 		line-height: 1.3;
 	}
 
-	:global(.assistant-prose h1) {
-		font-size: 1.25em;
-	}
-
-	:global(.assistant-prose h2) {
-		font-size: 1.125em;
-	}
-
-	:global(.assistant-prose h3) {
-		font-size: 1em;
-	}
+	:global(.assistant-prose h1) { font-size: 1.2em; }
+	:global(.assistant-prose h2) { font-size: 1.1em; }
+	:global(.assistant-prose h3) { font-size: 1em; }
 
 	/* Horizontal rule */
 	:global(.assistant-prose hr) {
 		border: none;
 		border-top: 1px solid var(--color-border);
-		margin: 1rem 0;
+		margin: 0.75rem 0;
 	}
 
 	/* Tables */
 	:global(.assistant-prose table) {
 		width: 100%;
 		border-collapse: collapse;
-		margin: 0.75rem 0;
-		font-size: 0.875em;
+		margin: 0.5rem 0;
+		font-size: 0.85em;
 	}
 
 	:global(.assistant-prose th),
 	:global(.assistant-prose td) {
 		border: 1px solid var(--color-border);
-		padding: 0.5rem 0.75rem;
+		padding: 0.4rem 0.6rem;
 		text-align: left;
 	}
 

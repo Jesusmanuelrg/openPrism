@@ -29,21 +29,22 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		.eq('project_id', params.projectId)
 		.order('cite_key');
 
-	// Load or create conversation
-	let { data: conversation } = await supabase
+	// Load or create conversation (avoid .single() which throws on 0 or multiple rows)
+	const { data: conversations } = await supabase
 		.from('conversations')
 		.select('*')
 		.eq('project_id', params.projectId)
 		.order('created_at', { ascending: false })
-		.limit(1)
-		.single();
+		.limit(1);
+
+	let conversation = conversations?.[0] ?? null;
 
 	if (!conversation) {
 		const { data: newConversation } = await supabase
 			.from('conversations')
-			.insert({ project_id: params.projectId, messages: [] })
+			.insert({ project_id: params.projectId, messages: [] } as any)
 			.select()
-			.single();
+			.maybeSingle();
 		conversation = newConversation;
 	}
 

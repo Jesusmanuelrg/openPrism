@@ -17,7 +17,9 @@
 	});
 
 	onDestroy(() => {
-		document.removeEventListener('mousedown', handleClickOutside);
+		if (typeof document !== 'undefined') {
+			document.removeEventListener('mousedown', handleClickOutside);
+		}
 	});
 
 	function toggleDropdown() {

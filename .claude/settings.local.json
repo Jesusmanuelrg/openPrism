@@ -23,7 +23,15 @@
       "Bash(timeout 10 pnpm run dev:*)",
       "Bash(pnpm run build:*)",
       "Bash(git show:*)",
-      "Bash(bun install:*)"
+      "Bash(bun install:*)",
+      "Bash(grep:*)",
+      "Bash(bun add:*)",
+      "Bash(bun run:*)",
+      "Bash(curl:*)",
+      "Bash(pkill:*)",
+      "Bash(git diff:*)",
+      "Bash(git fetch:*)",
+      "Bash(npx svelte-check:*)"
     ]
   }
 }

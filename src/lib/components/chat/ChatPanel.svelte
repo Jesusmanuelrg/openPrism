@@ -1,23 +1,22 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { chatStore, AVAILABLE_MODELS, changesStore, pendingChanges } from '$lib/stores';
 	import type { CodeChange } from '$lib/stores';
 	import { createSupabaseClient } from '$lib/supabase';
 	import Message from './Message.svelte';
 	import CodeChanges from './CodeChanges.svelte';
-	import { Send, ChevronDown, Trash2, ChevronUp, GripHorizontal } from 'lucide-svelte';
+	import { Send, ChevronDown, Trash2, ChevronUp, GripHorizontal, ArrowLeft } from 'lucide-svelte';
 	import type { ProjectFile } from '$lib/utils/database.types';
-	import { slide } from 'svelte/transition';
-	import { ArrowLeft } from 'lucide-svelte';
 
 	interface Props {
 		projectId: string;
 		conversationId?: string;
 		currentFile?: ProjectFile | null;
-		editorContent?: string; // Current editor content, synced from parent
+		editorContent?: string;
 		onContentChange?: (newContent: string) => void;
 		onNavigateToChange?: (lineNumber: number) => void;
 		onExitFullscreen?: () => void;
-		mode?: 'floating' | 'side' | 'fullscreen'; // Display mode
+		mode?: 'floating' | 'side' | 'fullscreen';
 	}
 
 	let { projectId, conversationId, currentFile, editorContent, onContentChange, onNavigateToChange, onExitFullscreen, mode = 'floating' }: Props = $props();
@@ -31,28 +30,29 @@
 	let textareaRef: HTMLTextAreaElement;
 	let messagesContainer: HTMLDivElement;
 	let scrollContainer: HTMLDivElement;
-	let chatExpanded = $state(mode === 'side' || mode === 'fullscreen'); // Always expanded in side/fullscreen modes
+	let chatExpanded = $state(mode === 'side' || mode === 'fullscreen');
 	let showModelDropdown = $state(false);
+	let modelDropdownRef: HTMLDivElement;
+	let chatPanelRef: HTMLDivElement;
 
 	// In side/fullscreen mode, chat is always expanded
 	const isExpanded = $derived(mode === 'side' || mode === 'fullscreen' ? true : chatExpanded);
 
 	// Auto-collapse chat when new pending changes appear (floating mode only)
-	let prevPendingCount = $state(0);
+	// Use a regular variable (not $state) to avoid reactivity loops
+	let prevPendingCount = 0;
 	$effect(() => {
 		const count = $pendingChanges.length;
-		// Auto-collapse when new changes appear (floating mode only)
-		if (mode === 'floating' && count > prevPendingCount && chatExpanded) {
+		const prev = untrack(() => prevPendingCount);
+		if (mode === 'floating' && count > prev && chatExpanded) {
 			chatExpanded = false;
 		}
 		prevPendingCount = count;
 	});
-	let modelDropdownRef: HTMLDivElement;
-	let chatPanelRef: HTMLDivElement;
 
-	// Resizable chat height
+	// Resizable chat height (floating mode only)
 	const MIN_HEIGHT = 150;
-	const DEFAULT_HEIGHT = 288; // h-72
+	const DEFAULT_HEIGHT = 288;
 	const MAX_HEIGHT = 700;
 	let chatHeight = $state(DEFAULT_HEIGHT);
 	let isResizing = $state(false);
@@ -71,7 +71,7 @@
 
 	function handleResize(e: MouseEvent) {
 		if (!isResizing) return;
-		const delta = startY - e.clientY; // Inverted because dragging up should increase height
+		const delta = startY - e.clientY;
 		const newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startHeight + delta));
 		chatHeight = newHeight;
 	}
@@ -85,7 +85,6 @@
 	}
 
 	function handleResizeDoubleClick() {
-		// Toggle between default and max height
 		if (chatHeight < MAX_HEIGHT - 50) {
 			chatHeight = MAX_HEIGHT;
 		} else {
@@ -93,7 +92,6 @@
 		}
 	}
 
-	// Auto-resize textarea
 	function autoResize() {
 		if (textareaRef) {
 			textareaRef.style.height = 'auto';
@@ -101,7 +99,6 @@
 		}
 	}
 
-	// Parse AI response for code changes
 	function parseCodeChanges(content: string, filePath: string): void {
 		const codeBlockRegex = /```(?:latex|tex|typst|typ)?\n([\s\S]*?)```/g;
 		let match;
@@ -190,6 +187,7 @@
 			const decoder = new TextDecoder();
 			let buffer = '';
 			let fullContent = '';
+			let lastScrollTime = 0;
 
 			while (true) {
 				const { done, value } = await reader.read();
@@ -209,7 +207,12 @@
 							if (parsed.content) {
 								fullContent += parsed.content;
 								chatStore.updateLastMessage(fullContent);
-								scrollToBottom(); // Auto-scroll during streaming
+								// Throttle scrolling during streaming to avoid performance issues
+								const now = Date.now();
+								if (now - lastScrollTime > 100) {
+									scrollToBottom();
+									lastScrollTime = now;
+								}
 							}
 							if (parsed.error) {
 								throw new Error(parsed.error);
@@ -268,11 +271,8 @@
 		}, 0);
 	}
 
-	$effect(() => {
-		if ($chatStore.messages.length > 0) {
-			scrollToBottom();
-		}
-	});
+	// Removed: Auto-scroll effect that caused infinite loops during streaming
+	// Scrolling is now handled explicitly in sendMessage() with throttling
 
 	const currentModel = $derived(
 		AVAILABLE_MODELS.find(m => m.id === $chatStore.selectedModel) || AVAILABLE_MODELS[0]
@@ -297,9 +297,9 @@
 		}
 	});
 
+	// Click-outside to collapse (floating mode only)
 	$effect(() => {
-		if (chatExpanded) {
-			// Delay adding the listener to avoid immediate collapse from the click that opened it
+		if (mode === 'floating' && chatExpanded) {
 			const timeout = setTimeout(() => {
 				document.addEventListener('click', handleChatClickOutside);
 			}, 100);
@@ -310,18 +310,16 @@
 		}
 	});
 
-	// Handle applying a code change
 	function handleApplyChange(_change: CodeChange, newContent: string) {
 		onContentChange?.(newContent);
 	}
 </script>
 
-<!-- Chat Container -->
-<div class={mode === 'floating' ? 'absolute bottom-0 left-0 right-0 mx-3 mb-3 z-20' : mode === 'fullscreen' ? 'fixed inset-0 z-50 flex flex-col bg-background' : 'flex flex-col h-full'}>
-	<!-- Chat Panel -->
-	<div bind:this={chatPanelRef} class={mode === 'floating' ? 'rounded-xl bg-background/95 backdrop-blur-xl border border-border/50 shadow-xl overflow-hidden' : mode === 'fullscreen' ? 'flex flex-col h-full bg-background overflow-hidden' : 'flex flex-col h-full bg-background overflow-hidden'}>
-		<!-- Fullscreen Header -->
-		{#if mode === 'fullscreen'}
+<!-- Fullscreen Mode -->
+{#if mode === 'fullscreen'}
+	<div class="fixed inset-0 z-50 flex flex-col bg-background">
+		<div class="flex flex-col h-full bg-background overflow-hidden">
+			<!-- Fullscreen Header -->
 			<div class="h-12 flex items-center justify-between px-4 border-b border-border-subtle shrink-0">
 				<button
 					type="button"
@@ -335,31 +333,12 @@
 					{currentFile?.path || 'Chat'}
 				</span>
 			</div>
-		{/if}
-		<!-- Expandable Chat History -->
-		{#if isExpanded}
-			<div
-				class={mode === 'side' || mode === 'fullscreen' ? 'flex-1 flex flex-col min-h-0' : 'border-b border-border/30'}
-				transition:slide={{ duration: 200 }}
-			>
-				<!-- Resize Handle (only in floating mode) -->
-				{#if mode === 'floating'}
-					<div
-						class="flex items-center justify-center h-5 cursor-ns-resize hover:bg-muted/50 transition-colors group border-b border-border/20"
-						onmousedown={startResize}
-						ondblclick={handleResizeDoubleClick}
-						role="separator"
-						aria-orientation="horizontal"
-						title="Drag to resize, double-click to expand"
-					>
-						<GripHorizontal class="h-3 w-3 text-muted-foreground/40 group-hover:text-muted-foreground" />
-					</div>
-				{/if}
 
+			<!-- Chat Content -->
+			<div class="flex-1 flex flex-col min-h-0">
 				<!-- Minimal Header -->
 				<div class="flex items-center justify-between px-3 py-1.5 bg-muted/30 border-b border-border/20 shrink-0">
 					<div class="flex items-center gap-2">
-						<!-- Compact Model Selector -->
 						<div class="relative" bind:this={modelDropdownRef}>
 							<button
 								type="button"
@@ -409,7 +388,7 @@
 				</div>
 
 				<!-- Messages -->
-				<div bind:this={scrollContainer} class={mode === 'side' || mode === 'fullscreen' ? 'flex-1 overflow-auto min-h-0' : 'overflow-auto'} style={mode === 'floating' ? `height: ${chatHeight}px` : ''}>
+				<div bind:this={scrollContainer} class="flex-1 overflow-auto min-h-0">
 					<div bind:this={messagesContainer} class="flex flex-col gap-3 p-3 min-h-full">
 						{#if $chatStore.messages.length === 0}
 							<div class="text-center text-muted-foreground py-6">
@@ -429,7 +408,123 @@
 					</div>
 				</div>
 			</div>
-		{/if}
+
+			<!-- Code Changes Panel -->
+			{#if $pendingChanges.length > 0 && currentFile}
+				<div class="border-b border-border/30">
+					<CodeChanges
+						getCurrentContent={() => currentContent}
+						onApplyChange={handleApplyChange}
+						{onNavigateToChange}
+					/>
+				</div>
+			{/if}
+
+			<!-- Input Bar -->
+			<div class="p-2 shrink-0">
+				<div class="flex items-end gap-2">
+					<textarea
+						bind:this={textareaRef}
+						bind:value={inputValue}
+						placeholder="Ask anything..."
+						disabled={$chatStore.isLoading}
+						onkeydown={handleKeydown}
+						oninput={autoResize}
+						rows="1"
+						class="flex-1 text-sm bg-transparent border-0 px-2 py-1.5 focus:outline-none placeholder:text-muted-foreground/40 disabled:opacity-50 resize-none min-h-[32px] max-h-[100px]"
+					></textarea>
+
+					<button
+						type="button"
+						class="p-1.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-30 shrink-0"
+						onclick={sendMessage}
+						disabled={!inputValue.trim() || $chatStore.isLoading}
+					>
+						{#if $chatStore.isLoading}
+							<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+						{:else}
+							<Send class="h-4 w-4" />
+						{/if}
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+<!-- Side Mode -->
+{:else if mode === 'side'}
+	<div class="flex flex-col h-full bg-background overflow-hidden">
+		<!-- Minimal Header -->
+		<div class="flex items-center justify-between px-3 py-1.5 bg-muted/30 border-b border-border/20 shrink-0">
+			<div class="flex items-center gap-2">
+				<div class="relative" bind:this={modelDropdownRef}>
+					<button
+						type="button"
+						class="flex items-center gap-1 px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors"
+						onclick={() => (showModelDropdown = !showModelDropdown)}
+					>
+						<span>{currentModel.name}</span>
+						<ChevronDown class="h-3 w-3 opacity-50" />
+					</button>
+
+					{#if showModelDropdown}
+						<div class="absolute top-full left-0 mt-1 py-1 bg-background border border-border/50 rounded-lg shadow-xl min-w-[180px] max-h-56 overflow-auto z-50">
+							{#each AVAILABLE_MODELS as model}
+								<button
+									type="button"
+									class="flex items-center justify-between w-full px-2.5 py-1.5 text-xs transition-colors {$chatStore.selectedModel === model.id ? 'text-foreground bg-muted/50' : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'}"
+									onclick={() => {
+										chatStore.setModel(model.id);
+										showModelDropdown = false;
+									}}
+								>
+									<span>{model.name}</span>
+									{#if $chatStore.selectedModel === model.id}
+										<span class="text-primary text-[10px]">●</span>
+									{/if}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+
+				{#if currentFile}
+					<span class="text-[10px] text-muted-foreground/60 truncate max-w-24">
+						{currentFile.path}
+					</span>
+				{/if}
+			</div>
+
+			<button
+				type="button"
+				class="p-1 text-muted-foreground/60 hover:text-destructive rounded transition-colors"
+				onclick={clearChat}
+				title="Clear"
+			>
+				<Trash2 class="h-3 w-3" />
+			</button>
+		</div>
+
+		<!-- Messages -->
+		<div bind:this={scrollContainer} class="flex-1 overflow-auto min-h-0">
+			<div bind:this={messagesContainer} class="flex flex-col gap-3 p-3 min-h-full">
+				{#if $chatStore.messages.length === 0}
+					<div class="text-center text-muted-foreground py-6">
+						<p class="text-xs">Ask about your document</p>
+					</div>
+				{:else}
+					{#each $chatStore.messages as message (message.id)}
+						<Message {message} compact />
+					{/each}
+				{/if}
+
+				{#if $chatStore.error}
+					<div class="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+						{$chatStore.error}
+					</div>
+				{/if}
+			</div>
+		</div>
 
 		<!-- Code Changes Panel -->
 		{#if $pendingChanges.length > 0 && currentFile}
@@ -445,20 +540,6 @@
 		<!-- Input Bar -->
 		<div class="p-2 shrink-0">
 			<div class="flex items-end gap-2">
-				{#if mode === 'floating'}
-					<button
-						type="button"
-						class="p-1.5 text-muted-foreground/60 hover:text-foreground rounded-lg transition-colors shrink-0"
-						onclick={() => (chatExpanded = !chatExpanded)}
-					>
-						{#if chatExpanded}
-							<ChevronDown class="h-4 w-4" />
-						{:else}
-							<ChevronUp class="h-4 w-4" />
-						{/if}
-					</button>
-				{/if}
-
 				<textarea
 					bind:this={textareaRef}
 					bind:value={inputValue}
@@ -485,4 +566,151 @@
 			</div>
 		</div>
 	</div>
-</div>
+
+<!-- Floating Mode (default) -->
+{:else}
+	<div class="absolute bottom-0 left-0 right-0 mx-3 mb-3 z-20">
+		<div bind:this={chatPanelRef} class="rounded-xl bg-background/95 backdrop-blur-xl border border-border/50 shadow-xl overflow-hidden">
+			<!-- Expandable Chat History -->
+			{#if chatExpanded}
+				<div class="border-b border-border/30">
+					<!-- Resize Handle -->
+					<div
+						class="flex items-center justify-center h-5 cursor-ns-resize hover:bg-muted/50 transition-colors group border-b border-border/20"
+						onmousedown={startResize}
+						ondblclick={handleResizeDoubleClick}
+						role="separator"
+						aria-orientation="horizontal"
+						title="Drag to resize, double-click to expand"
+					>
+						<GripHorizontal class="h-3 w-3 text-muted-foreground/40 group-hover:text-muted-foreground" />
+					</div>
+
+					<!-- Minimal Header -->
+					<div class="flex items-center justify-between px-3 py-1.5 bg-muted/30 border-b border-border/20">
+						<div class="flex items-center gap-2">
+							<div class="relative" bind:this={modelDropdownRef}>
+								<button
+									type="button"
+									class="flex items-center gap-1 px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors"
+									onclick={() => (showModelDropdown = !showModelDropdown)}
+								>
+									<span>{currentModel.name}</span>
+									<ChevronDown class="h-3 w-3 opacity-50" />
+								</button>
+
+								{#if showModelDropdown}
+									<div class="absolute top-full left-0 mt-1 py-1 bg-background border border-border/50 rounded-lg shadow-xl min-w-[180px] max-h-56 overflow-auto z-50">
+										{#each AVAILABLE_MODELS as model}
+											<button
+												type="button"
+												class="flex items-center justify-between w-full px-2.5 py-1.5 text-xs transition-colors {$chatStore.selectedModel === model.id ? 'text-foreground bg-muted/50' : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'}"
+												onclick={() => {
+													chatStore.setModel(model.id);
+													showModelDropdown = false;
+												}}
+											>
+												<span>{model.name}</span>
+												{#if $chatStore.selectedModel === model.id}
+													<span class="text-primary text-[10px]">●</span>
+												{/if}
+											</button>
+										{/each}
+									</div>
+								{/if}
+							</div>
+
+							{#if currentFile}
+								<span class="text-[10px] text-muted-foreground/60 truncate max-w-24">
+									{currentFile.path}
+								</span>
+							{/if}
+						</div>
+
+						<button
+							type="button"
+							class="p-1 text-muted-foreground/60 hover:text-destructive rounded transition-colors"
+							onclick={clearChat}
+							title="Clear"
+						>
+							<Trash2 class="h-3 w-3" />
+						</button>
+					</div>
+
+					<!-- Messages -->
+					<div bind:this={scrollContainer} class="overflow-auto" style="height: {chatHeight}px">
+						<div bind:this={messagesContainer} class="flex flex-col gap-3 p-3 min-h-full">
+							{#if $chatStore.messages.length === 0}
+								<div class="text-center text-muted-foreground py-6">
+									<p class="text-xs">Ask about your document</p>
+								</div>
+							{:else}
+								{#each $chatStore.messages as message (message.id)}
+									<Message {message} compact />
+								{/each}
+							{/if}
+
+							{#if $chatStore.error}
+								<div class="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+									{$chatStore.error}
+								</div>
+							{/if}
+						</div>
+					</div>
+				</div>
+			{/if}
+
+			<!-- Code Changes Panel -->
+			{#if $pendingChanges.length > 0 && currentFile}
+				<div class="border-b border-border/30">
+					<CodeChanges
+						getCurrentContent={() => currentContent}
+						onApplyChange={handleApplyChange}
+						{onNavigateToChange}
+					/>
+				</div>
+			{/if}
+
+			<!-- Input Bar -->
+			<div class="p-2">
+				<div class="flex items-end gap-2">
+					<button
+						type="button"
+						class="p-1.5 text-muted-foreground/60 hover:text-foreground rounded-lg transition-colors shrink-0"
+						onclick={() => (chatExpanded = !chatExpanded)}
+					>
+						{#if chatExpanded}
+							<ChevronDown class="h-4 w-4" />
+						{:else}
+							<ChevronUp class="h-4 w-4" />
+						{/if}
+					</button>
+
+					<textarea
+						bind:this={textareaRef}
+						bind:value={inputValue}
+						placeholder="Ask anything..."
+						disabled={$chatStore.isLoading}
+						onkeydown={handleKeydown}
+						oninput={autoResize}
+						rows="1"
+						class="flex-1 text-sm bg-transparent border-0 px-2 py-1.5 focus:outline-none placeholder:text-muted-foreground/40 disabled:opacity-50 resize-none min-h-[32px] max-h-[100px]"
+					></textarea>
+
+					<button
+						type="button"
+						class="p-1.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-30 shrink-0"
+						onclick={sendMessage}
+						disabled={!inputValue.trim() || $chatStore.isLoading}
+					>
+						{#if $chatStore.isLoading}
+							<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+						{:else}
+							<Send class="h-4 w-4" />
+						{/if}
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
