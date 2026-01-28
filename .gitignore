@@ -1,14 +1,25 @@
+# Dependencies
 node_modules
-.DS_Store
+
+# Build outputs
+.svelte-kit
+build
+.output
+.vercel
+
+# Environment variables
 .env
 .env.*
 !.env.example
-.svelte-kit
-build
-.vercel
-.output
+
+# IDE and OS
+.DS_Store
+.vscode
+.idea
+
+# Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Claude Code
 .claude
-.claude/*
-.gitignore
