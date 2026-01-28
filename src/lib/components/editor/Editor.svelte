@@ -47,9 +47,10 @@
 		content: string;
 		format: 'latex' | 'typst';
 		onchange?: (content: string) => void;
+		onScroll?: (percent: number) => void;
 	}
 
-	let { content, format, onchange }: Props = $props();
+	let { content, format, onchange, onScroll }: Props = $props();
 
 	let editorContainer: HTMLDivElement;
 	let view = $state<EditorView | null>(null);
@@ -63,6 +64,16 @@
 				effects: EditorView.scrollIntoView(line.from, { y: 'center' })
 			});
 			view.focus();
+		}
+	}
+
+	// Expose scrollToPercent for linked scrolling
+	export function scrollToPercent(percent: number) {
+		if (view) {
+			const scroller = view.scrollDOM;
+			if (scroller.scrollHeight > scroller.clientHeight) {
+				scroller.scrollTop = percent * (scroller.scrollHeight - scroller.clientHeight);
+			}
 		}
 	}
 	let languageCompartment = new Compartment();
@@ -301,6 +312,20 @@
 		});
 
 		editorStore.setContent(content);
+
+		// Add scroll listener for linked scrolling
+		const scroller = view.scrollDOM;
+		const handleEditorScroll = () => {
+			if (scroller.scrollHeight > scroller.clientHeight && onScroll) {
+				const percent = scroller.scrollTop / (scroller.scrollHeight - scroller.clientHeight);
+				onScroll(percent);
+			}
+		};
+		scroller.addEventListener('scroll', handleEditorScroll);
+
+		return () => {
+			scroller.removeEventListener('scroll', handleEditorScroll);
+		};
 	});
 
 	onDestroy(() => {

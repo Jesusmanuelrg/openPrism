@@ -40,6 +40,33 @@
 	// Editor reference for navigation
 	let editorRef: Editor;
 
+	// PDF viewer reference for linked scrolling
+	let pdfViewerRef: PdfViewer;
+
+	// Linked scroll state
+	let linkedScroll = $state(false);
+	let isScrollingSynced = false; // Prevent infinite loops
+
+	function handleEditorScroll(percent: number) {
+		if (linkedScroll && !isScrollingSynced) {
+			isScrollingSynced = true;
+			pdfViewerRef?.scrollToPercent(percent);
+			setTimeout(() => { isScrollingSynced = false; }, 50);
+		}
+	}
+
+	function handlePdfScroll(percent: number) {
+		if (linkedScroll && !isScrollingSynced) {
+			isScrollingSynced = true;
+			editorRef?.scrollToPercent(percent);
+			setTimeout(() => { isScrollingSynced = false; }, 50);
+		}
+	}
+
+	function handleLinkedScrollChange(enabled: boolean) {
+		linkedScroll = enabled;
+	}
+
 	// AI assistant features state
 	let proofreading = $state(false);
 	let summarizing = $state(false);
@@ -715,6 +742,7 @@
 					content={$activeFile.content}
 					format={data.project.format}
 					onchange={handleContentChange}
+					onScroll={handleEditorScroll}
 				/>
 			{:else}
 				<div class="flex flex-1 items-center justify-center text-muted-foreground h-full">
@@ -762,11 +790,15 @@
 	<div class="flex-1 bg-muted/30 flex flex-col min-w-0">
 		{#if pdfData}
 			<PdfViewer
+				bind:this={pdfViewerRef}
 				data={pdfData}
 				{compileLog}
 				{compileErrors}
 				isCompiling={compiling}
 				onRecompile={compile}
+				{linkedScroll}
+				onLinkedScrollChange={handleLinkedScrollChange}
+				onScroll={handlePdfScroll}
 			/>
 		{:else if compileError}
 			<div class="m-4 rounded-xl bg-destructive/10 p-4 text-sm text-destructive">

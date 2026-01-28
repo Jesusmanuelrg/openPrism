@@ -2,7 +2,7 @@
 	import { onDestroy, tick } from 'svelte';
 	import { fly, fade } from 'svelte/transition';
 	import { cubicOut, backOut } from 'svelte/easing';
-	import { ZoomIn, ZoomOut, RefreshCw, Download, AlertTriangle, X } from 'lucide-svelte';
+	import { ZoomIn, ZoomOut, RefreshCw, Download, AlertTriangle, X, Link2, Link2Off } from 'lucide-svelte';
 
 	interface Props {
 		data: Uint8Array;
@@ -10,9 +10,12 @@
 		compileErrors?: string[];
 		isCompiling?: boolean;
 		onRecompile?: () => void;
+		linkedScroll?: boolean;
+		onLinkedScrollChange?: (enabled: boolean) => void;
+		onScroll?: (percent: number) => void;
 	}
 
-	let { data, compileLog = '', compileErrors = [], isCompiling = false, onRecompile }: Props = $props();
+	let { data, compileLog = '', compileErrors = [], isCompiling = false, onRecompile, linkedScroll = false, onLinkedScrollChange, onScroll }: Props = $props();
 
 	let container: HTMLDivElement;
 	let pdfDoc: any = null;
@@ -24,13 +27,50 @@
 	let showLogs = $state(false);
 	let activeTab = $state<'issues' | 'log'>('issues');
 
+	// Scroll position preservation
+	let savedScrollPercent = $state(0);
+
+	// Linked scroll - expose scroll to percent method
+	export function scrollToPercent(percent: number) {
+		if (container && container.scrollHeight > container.clientHeight) {
+			container.scrollTop = percent * (container.scrollHeight - container.clientHeight);
+		}
+	}
+
+	// Handle scroll events for linked scrolling
+	function handleContainerScroll() {
+		if (container && container.scrollHeight > container.clientHeight && onScroll) {
+			const percent = container.scrollTop / (container.scrollHeight - container.clientHeight);
+			onScroll(percent);
+		}
+	}
+
+	function toggleLinkedScroll() {
+		onLinkedScrollChange?.(!linkedScroll);
+	}
+
 	onDestroy(() => {
 		if (pdfDoc) {
 			pdfDoc.destroy();
 		}
 	});
 
+	function saveScrollPosition() {
+		if (container && container.scrollHeight > container.clientHeight) {
+			savedScrollPercent = container.scrollTop / (container.scrollHeight - container.clientHeight);
+		}
+	}
+
+	function restoreScrollPosition() {
+		if (container && savedScrollPercent > 0 && container.scrollHeight > container.clientHeight) {
+			container.scrollTop = savedScrollPercent * (container.scrollHeight - container.clientHeight);
+		}
+	}
+
 	async function loadPdf() {
+		// Save scroll position before reloading
+		saveScrollPosition();
+
 		// Clean up previous document to avoid memory leaks
 		if (pdfDoc) {
 			pdfDoc.destroy();
@@ -62,6 +102,11 @@
 		// Wait for Svelte to render the canvases before drawing
 		await tick();
 		await renderAllPages();
+
+		// Restore scroll position after pages are rendered
+		setTimeout(() => {
+			restoreScrollPosition();
+		}, 100);
 	}
 
 	async function renderAllPages() {
@@ -169,6 +214,20 @@
 				<Download class="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors duration-300" />
 			</button>
 
+			<!-- Linked Scroll Toggle -->
+			<button
+				type="button"
+				class="group p-2 hover:bg-muted/50 rounded-xl transition-all duration-300 ease-out hover:scale-105 active:scale-95"
+				onclick={toggleLinkedScroll}
+				title={linkedScroll ? 'Disable linked scroll' : 'Enable linked scroll'}
+			>
+				{#if linkedScroll}
+					<Link2 class="h-4 w-4 text-primary transition-colors duration-300" />
+				{:else}
+					<Link2Off class="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors duration-300" />
+				{/if}
+			</button>
+
 			<div class="h-5 w-px bg-border/40 mx-1.5 transition-colors duration-300"></div>
 
 			<!-- Zoom Controls -->
@@ -224,7 +283,7 @@
 	</div>
 
 	<!-- PDF Canvas Area - Scrollable with all pages -->
-	<div class="h-full w-full overflow-auto" bind:this={container}>
+	<div class="h-full w-full overflow-auto" bind:this={container} onscroll={handleContainerScroll}>
 		<div class="flex flex-col items-center gap-4 p-6 pt-20">
 			{#if loading}
 				<div
