@@ -33,6 +33,9 @@
 	let newFileName = $state('');
 	let creatingFile = $state(false);
 
+	// Track current editor content for real-time sync with ChatPanel
+	let currentEditorContent = $state<string>('');
+
 	onMount(() => {
 		projectStore.setProject(data.project);
 		projectStore.setFiles(data.files);
@@ -69,6 +72,16 @@
 		if (realtimeCompileTimeout) clearTimeout(realtimeCompileTimeout);
 	});
 
+	// Sync editor content only when switching to a different file
+	let lastActiveFileId = $state<string | null>(null);
+	$effect(() => {
+		const file = $activeFile;
+		if (file && file.id !== lastActiveFileId) {
+			lastActiveFileId = file.id;
+			currentEditorContent = file.content;
+		}
+	});
+
 	// Realtime compilation effect
 	$effect(() => {
 		const realtimeEnabled = $settingsStore.editor.realtimeCompilation;
@@ -89,6 +102,7 @@
 		const file = $activeFile;
 		if (!file) return;
 
+		currentEditorContent = content; // Keep our local tracking in sync
 		projectStore.updateFile(file.id, content);
 
 		// Debounced save
@@ -257,7 +271,7 @@
 	}
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window onkeydowncapture={handleKeydown} />
 
 <div class="h-screen flex bg-background resize-container">
 	<!-- Files Sidebar (conditional) -->
@@ -363,11 +377,14 @@
 				<LayoutSettings />
 				<button
 					type="button"
-					class="text-sm px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg shadow-sm transition-all duration-200 disabled:opacity-50"
+					class="text-sm px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg shadow-sm transition-all duration-200 disabled:opacity-50 flex items-center gap-2"
 					onclick={compile}
 					disabled={compiling}
 				>
 					{compiling ? 'Compiling...' : 'Compile'}
+					{#if !compiling}
+						<kbd class="text-[10px] bg-primary-foreground/20 px-1.5 py-0.5 rounded">⌘↵</kbd>
+					{/if}
 				</button>
 			</div>
 		</header>
@@ -392,6 +409,7 @@
 					projectId={data.project.id}
 					conversationId={data.conversation?.id}
 					currentFile={$activeFile}
+					editorContent={currentEditorContent}
 					onContentChange={handleContentChange}
 				/>
 			{/if}
@@ -408,14 +426,14 @@
 	<!-- Chat Panel as Side Column (optional) -->
 	{#if $settingsStore.layout.chatPosition === 'side'}
 		<div class="w-80 border-r border-border flex flex-col bg-background shrink-0">
-			<div class="flex-1 flex flex-col overflow-hidden relative">
-				<ChatPanel
-					projectId={data.project.id}
-					conversationId={data.conversation?.id}
-					currentFile={$activeFile}
-					onContentChange={handleContentChange}
-				/>
-			</div>
+			<ChatPanel
+				projectId={data.project.id}
+				conversationId={data.conversation?.id}
+				currentFile={$activeFile}
+				editorContent={currentEditorContent}
+				onContentChange={handleContentChange}
+				mode="side"
+			/>
 		</div>
 	{/if}
 

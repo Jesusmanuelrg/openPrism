@@ -6,10 +6,7 @@
 import {
 	EditorView,
 	Decoration,
-	DecorationSet,
-	WidgetType,
-	ViewPlugin,
-	ViewUpdate
+	WidgetType
 } from '@codemirror/view';
 import { StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
 import type { CodeChange } from '$lib/stores/changes';
@@ -44,13 +41,13 @@ class DiffControlWidget extends WidgetType {
 		container.innerHTML = `
 			<div class="cm-diff-controls-inner">
 				<button class="cm-diff-accept" title="Accept change (Cmd+Y)">
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
 						<polyline points="20 6 9 17 4 12"></polyline>
 					</svg>
 					Accept
 				</button>
 				<button class="cm-diff-reject" title="Reject change (Cmd+N)">
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
 						<line x1="18" y1="6" x2="6" y2="18"></line>
 						<line x1="6" y1="6" x2="18" y2="18"></line>
 					</svg>
@@ -213,7 +210,7 @@ export function createInlineDiffExtension(
 // Theme for inline diffs
 const inlineDiffTheme = EditorView.theme({
 	'.cm-diff-controls': {
-		padding: '8px 16px',
+		padding: '4px 12px',
 		background: 'var(--color-muted)',
 		borderTop: '1px solid var(--color-border)',
 		borderBottom: '1px solid var(--color-border)',
@@ -221,16 +218,16 @@ const inlineDiffTheme = EditorView.theme({
 	},
 	'.cm-diff-controls-inner': {
 		display: 'flex',
-		gap: '8px',
+		gap: '6px',
 		alignItems: 'center'
 	},
 	'.cm-diff-accept, .cm-diff-reject': {
 		display: 'inline-flex',
 		alignItems: 'center',
-		gap: '4px',
-		padding: '4px 12px',
-		borderRadius: '6px',
-		fontSize: '12px',
+		gap: '3px',
+		padding: '2px 8px',
+		borderRadius: '4px',
+		fontSize: '11px',
 		fontWeight: '500',
 		cursor: 'pointer',
 		transition: 'all 0.15s ease',

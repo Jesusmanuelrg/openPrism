@@ -6,24 +6,33 @@
 	import CodeChanges from './CodeChanges.svelte';
 	import { Send, ChevronDown, Trash2, ChevronUp, GripHorizontal } from 'lucide-svelte';
 	import type { ProjectFile } from '$lib/utils/database.types';
+	import { slide } from 'svelte/transition';
 
 	interface Props {
 		projectId: string;
 		conversationId?: string;
 		currentFile?: ProjectFile | null;
+		editorContent?: string; // Current editor content, synced from parent
 		onContentChange?: (newContent: string) => void;
+		mode?: 'floating' | 'side'; // Display mode
 	}
 
-	let { projectId, conversationId, currentFile, onContentChange }: Props = $props();
+	let { projectId, conversationId, currentFile, editorContent, onContentChange, mode = 'floating' }: Props = $props();
 
 	const supabase = createSupabaseClient();
+
+	// Use editorContent prop if provided, otherwise fall back to currentFile.content
+	const currentContent = $derived(editorContent ?? currentFile?.content ?? '');
 
 	let inputValue = $state('');
 	let textareaRef: HTMLTextAreaElement;
 	let messagesContainer: HTMLDivElement;
 	let scrollContainer: HTMLDivElement;
-	let chatExpanded = $state(false);
+	let chatExpanded = $state(mode === 'side'); // Always expanded in side mode
 	let showModelDropdown = $state(false);
+
+	// In side mode, chat is always expanded
+	const isExpanded = $derived(mode === 'side' ? true : chatExpanded);
 	let modelDropdownRef: HTMLDivElement;
 	let chatPanelRef: HTMLDivElement;
 
@@ -146,7 +155,7 @@
 					model: $chatStore.selectedModel,
 					context: {
 						currentFile: currentFile
-							? { path: currentFile.path, content: currentFile.content }
+							? { path: currentFile.path, content: currentContent }
 							: undefined,
 						history: $chatStore.messages.slice(0, -2).map((m) => ({
 							role: m.role,
@@ -293,27 +302,32 @@
 	}
 </script>
 
-<!-- Floating Chat Container -->
-<div class="absolute bottom-0 left-0 right-0 mx-3 mb-3 z-20">
+<!-- Chat Container -->
+<div class={mode === 'floating' ? 'absolute bottom-0 left-0 right-0 mx-3 mb-3 z-20' : 'flex flex-col h-full'}>
 	<!-- Chat Panel -->
-	<div bind:this={chatPanelRef} class="rounded-xl bg-background/95 backdrop-blur-xl border border-border/50 shadow-xl overflow-hidden">
+	<div bind:this={chatPanelRef} class={mode === 'floating' ? 'rounded-xl bg-background/95 backdrop-blur-xl border border-border/50 shadow-xl overflow-hidden' : 'flex flex-col h-full bg-background overflow-hidden'}>
 		<!-- Expandable Chat History -->
-		{#if chatExpanded}
-			<div class="border-b border-border/30">
-				<!-- Resize Handle -->
-				<div
-					class="flex items-center justify-center h-5 cursor-ns-resize hover:bg-muted/50 transition-colors group border-b border-border/20"
-					onmousedown={startResize}
-					ondblclick={handleResizeDoubleClick}
-					role="separator"
-					aria-orientation="horizontal"
-					title="Drag to resize, double-click to expand"
-				>
-					<GripHorizontal class="h-3 w-3 text-muted-foreground/40 group-hover:text-muted-foreground" />
-				</div>
+		{#if isExpanded}
+			<div
+				class={mode === 'side' ? 'flex-1 flex flex-col min-h-0' : 'border-b border-border/30'}
+				transition:slide={{ duration: 200 }}
+			>
+				<!-- Resize Handle (only in floating mode) -->
+				{#if mode === 'floating'}
+					<div
+						class="flex items-center justify-center h-5 cursor-ns-resize hover:bg-muted/50 transition-colors group border-b border-border/20"
+						onmousedown={startResize}
+						ondblclick={handleResizeDoubleClick}
+						role="separator"
+						aria-orientation="horizontal"
+						title="Drag to resize, double-click to expand"
+					>
+						<GripHorizontal class="h-3 w-3 text-muted-foreground/40 group-hover:text-muted-foreground" />
+					</div>
+				{/if}
 
 				<!-- Minimal Header -->
-				<div class="flex items-center justify-between px-3 py-1.5 bg-muted/30 border-b border-border/20">
+				<div class="flex items-center justify-between px-3 py-1.5 bg-muted/30 border-b border-border/20 shrink-0">
 					<div class="flex items-center gap-2">
 						<!-- Compact Model Selector -->
 						<div class="relative" bind:this={modelDropdownRef}>
@@ -365,7 +379,7 @@
 				</div>
 
 				<!-- Messages -->
-				<div bind:this={scrollContainer} class="overflow-auto" style="height: {chatHeight}px">
+				<div bind:this={scrollContainer} class={mode === 'side' ? 'flex-1 overflow-auto min-h-0' : 'overflow-auto'} style={mode === 'floating' ? `height: ${chatHeight}px` : ''}>
 					<div bind:this={messagesContainer} class="flex flex-col gap-3 p-3 min-h-full">
 						{#if $chatStore.messages.length === 0}
 							<div class="text-center text-muted-foreground py-6">
@@ -391,26 +405,28 @@
 		{#if $pendingChanges.length > 0 && currentFile}
 			<div class="border-b border-border/30">
 				<CodeChanges
-					getCurrentContent={() => currentFile?.content ?? ''}
+					getCurrentContent={() => currentContent}
 					onApplyChange={handleApplyChange}
 				/>
 			</div>
 		{/if}
 
 		<!-- Input Bar -->
-		<div class="p-2">
+		<div class="p-2 shrink-0">
 			<div class="flex items-end gap-2">
-				<button
-					type="button"
-					class="p-1.5 text-muted-foreground/60 hover:text-foreground rounded-lg transition-colors shrink-0"
-					onclick={() => (chatExpanded = !chatExpanded)}
-				>
-					{#if chatExpanded}
-						<ChevronDown class="h-4 w-4" />
-					{:else}
-						<ChevronUp class="h-4 w-4" />
-					{/if}
-				</button>
+				{#if mode === 'floating'}
+					<button
+						type="button"
+						class="p-1.5 text-muted-foreground/60 hover:text-foreground rounded-lg transition-colors shrink-0"
+						onclick={() => (chatExpanded = !chatExpanded)}
+					>
+						{#if chatExpanded}
+							<ChevronDown class="h-4 w-4" />
+						{:else}
+							<ChevronUp class="h-4 w-4" />
+						{/if}
+					</button>
+				{/if}
 
 				<textarea
 					bind:this={textareaRef}

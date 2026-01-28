@@ -20,7 +20,7 @@ export interface ChatState {
 const initialState: ChatState = {
 	messages: [],
 	isLoading: false,
-	selectedModel: 'anthropic/claude-3.5-sonnet',
+	selectedModel: 'anthropic/claude-sonnet-4',
 	error: null
 };
 
