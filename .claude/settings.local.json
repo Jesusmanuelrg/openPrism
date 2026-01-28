@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/jesusmanuelrg/Documents/research/openai/prism-clone log --oneline)"
+    ]
+  }
+}

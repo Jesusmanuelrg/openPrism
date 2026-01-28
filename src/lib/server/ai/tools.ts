@@ -4,6 +4,24 @@ export const scientificTools: Tool[] = [
 	{
 		type: 'function',
 		function: {
+			name: 'web_search',
+			description:
+				'Search the web for information. Use this when you need current information, documentation, or facts you are not sure about.',
+			parameters: {
+				type: 'object',
+				properties: {
+					query: {
+						type: 'string',
+						description: 'The search query'
+					}
+				},
+				required: ['query']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
 			name: 'search_literature',
 			description:
 				'Search for academic papers and literature on a given topic. Returns titles, authors, and DOIs.',

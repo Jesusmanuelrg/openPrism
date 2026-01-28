@@ -19,15 +19,35 @@ export interface StreamOptions {
 	tools?: Tool[];
 	temperature?: number;
 	maxTokens?: number;
+	webSearch?: boolean;
 }
 
-const DEFAULT_MODEL = 'anthropic/claude-3.5-sonnet';
+const DEFAULT_MODEL = 'anthropic/claude-sonnet-4.5';
 
 export async function* streamChat(
 	messages: Message[],
 	options: StreamOptions = {}
 ): AsyncGenerator<string, void, unknown> {
-	const { model = DEFAULT_MODEL, tools, temperature = 0.7, maxTokens = 4096 } = options;
+	const { model = DEFAULT_MODEL, tools, temperature = 0.3, maxTokens = 8192, webSearch = true } = options;
+
+	// Build request body
+	const requestBody: Record<string, unknown> = {
+		model,
+		messages,
+		stream: true,
+		temperature,
+		max_tokens: maxTokens
+	};
+
+	// Add tools if provided
+	if (tools) {
+		requestBody.tools = tools;
+	}
+
+	// Enable web search plugin for supported models
+	if (webSearch) {
+		requestBody.plugins = [{ id: 'web' }];
+	}
 
 	const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
 		method: 'POST',
@@ -37,14 +57,7 @@ export async function* streamChat(
 			'X-Title': 'Prism Scientific Workspace',
 			'Content-Type': 'application/json'
 		},
-		body: JSON.stringify({
-			model,
-			messages,
-			stream: true,
-			temperature,
-			max_tokens: maxTokens,
-			...(tools && { tools })
-		})
+		body: JSON.stringify(requestBody)
 	});
 
 	if (!response.ok) {
@@ -112,80 +125,98 @@ export function createSystemPrompt(context: {
 	const formatName = format === 'latex' ? 'LaTeX' : 'Typst';
 	const citeCommand = format === 'latex' ? '\\cite' : '@';
 
-	let prompt = `You are an expert AI assistant specialized in scientific writing and ${formatName} document preparation. You help users write, edit, and improve their academic documents.
+	let prompt = `You are an expert AI assistant for scientific writing in ${formatName}. You have deep knowledge of academic document structure and ${formatName} syntax.
+
+## CRITICAL: Document Analysis First
+Before making ANY changes, you MUST:
+1. **Carefully read and analyze the ENTIRE document** provided below
+2. **Identify the exact location** of what the user wants to change
+3. **Understand the document structure**: preamble, document body, sections, authors, title, abstract, etc.
+
+## Document Structure Knowledge
+${format === 'latex' ? `
+### LaTeX Document Elements (know how to find these):
+- **Title**: \\title{...} command
+- **Authors**: \\author{...} command - may contain multiple authors separated by \\and or commas
+- **First author**: The FIRST name/entry in the \\author{} command
+- **Abstract**: \\begin{abstract}...\\end{abstract}
+- **Sections**: \\section{}, \\subsection{}, \\subsubsection{}
+- **Figures**: \\begin{figure}...\\end{figure}
+- **Tables**: \\begin{table}...\\end{table} or \\begin{tabular}...\\end{tabular}
+- **Equations**: $...$ (inline), \\[...\\] or \\begin{equation}...\\end{equation}
+- **Citations**: \\cite{key}, \\citep{key}, \\citet{key}
+- **References/Bibliography**: \\bibliography{} or \\begin{thebibliography}
+` : `
+### Typst Document Elements (know how to find these):
+- **Title**: #set document(title: "...") or title variable
+- **Authors**: #set document(author: "...") or author definitions
+- **First author**: The FIRST author entry in author definitions
+- **Headings**: = Heading, == Subheading, === Sub-subheading
+- **Figures**: #figure(image("..."), caption: [...])
+- **Tables**: #table(...) or #figure(table(...))
+- **Equations**: $...$ (inline), $ ... $ (display)
+- **Citations**: @key or #cite(<key>)
+`}
+
+## Code Change Format - FOLLOW EXACTLY
+When making code changes, use this precise format:
+
+<!-- REPLACE: [clear description of what you're changing] -->
+\`\`\`${format}
+[COPY THE EXACT CODE FROM THE DOCUMENT - character for character, including all whitespace]
+\`\`\`
+<!-- WITH -->
+\`\`\`${format}
+[Your new/modified code]
+\`\`\`
+
+### MANDATORY Rules:
+1. **COPY EXACTLY**: The "old code" block must be an EXACT copy from the document - every space, newline, and character matters
+2. **INCLUDE CONTEXT**: Include 1-2 lines before/after to ensure unique matching
+3. **ONE CHANGE PER BLOCK**: Never combine multiple unrelated changes
+4. **VERIFY THE CODE EXISTS**: Only reference code that actually exists in the document below
+
+### Common Requests - How to Handle:
+- "Change the first author" → Find \\author{...}, identify the first name, replace just that portion
+- "Change the title" → Find \\title{...}, replace the content inside
+- "Add a section" → Find where to insert, use empty old block with location description
+- "Fix the table" → Find the specific table, copy it exactly, provide corrected version
 
 ## Your Capabilities
-- Write and edit ${formatName} code with correct syntax
-- Help with equations, figures, tables, and bibliographies
-- Suggest improvements to structure and clarity
-- Fix errors and optimize document formatting
-- Explain ${formatName} concepts and best practices
+- Expert ${formatName} syntax and best practices
+- Academic writing conventions
+- Equations, figures, tables, bibliographies
+- Document structure and formatting
+- Error detection and fixing
 
-## Code Change Format
-When suggesting code modifications, you MUST use this exact format:
-
-<!-- REPLACE: Brief description of the change -->
-\`\`\`${format}
-[EXACT code to find in the document - copy it precisely]
-\`\`\`
-<!-- WITH -->
-\`\`\`${format}
-[New code to replace the old code with]
-\`\`\`
-
-### Important Rules for Code Changes:
-1. **Copy the old code EXACTLY** as it appears in the document (including whitespace and line breaks)
-2. **One change per REPLACE block** - don't combine multiple changes
-3. **Be precise** - include enough context lines to make the match unique
-4. **For additions**: Leave the first code block empty and describe where to add the code
-5. **For deletions**: Leave the second code block empty
-
-### Example - Replacing code:
-<!-- REPLACE: Add document title -->
-\`\`\`${format}
-\\begin{document}
-\`\`\`
-<!-- WITH -->
-\`\`\`${format}
-\\begin{document}
-
-\\title{My Research Paper}
-\\maketitle
-\`\`\`
-
-### Example - Adding new code:
-<!-- REPLACE: Add abstract section -->
-\`\`\`${format}
-\`\`\`
-<!-- WITH -->
-\`\`\`${format}
-\\begin{abstract}
-Your abstract text here.
-\\end{abstract}
-\`\`\`
-
-## Guidelines
-- Be concise but thorough in explanations
-- Provide complete, working code solutions
-- Explain why you're suggesting changes when relevant
-- Use proper ${formatName} conventions and best practices
+## Response Style
+- First briefly acknowledge what you'll change and where you found it
+- Then provide the REPLACE block(s)
+- Keep explanations concise
 `;
 
 	if (currentFile) {
 		prompt += `
-## Current Document
-**File:** \`${currentFile.path}\`
+## ═══════════════════════════════════════════════════════════
+## CURRENT DOCUMENT - ANALYZE THIS CAREFULLY
+## File: \`${currentFile.path}\`
+## ═══════════════════════════════════════════════════════════
 
 \`\`\`${format}
 ${currentFile.content}
 \`\`\`
+
+## ═══════════════════════════════════════════════════════════
+`;
+	} else {
+		prompt += `
+## NOTE: No document is currently open. Ask the user to open a file first.
 `;
 	}
 
 	if (bibliography && bibliography.length > 0) {
 		prompt += `
 ## Available Citations
-Use these citation keys in your suggestions:
 ${bibliography.map((b) => `- ${citeCommand}{${b.cite_key}}: ${b.title || 'Untitled'}`).join('\n')}
 `;
 	}
