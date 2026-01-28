@@ -9,7 +9,21 @@
       "Bash(npm run check:*)",
       "Bash(npm run build:*)",
       "Bash(tree:*)",
-      "Bash(timeout 15 npm run dev:*)"
+      "Bash(timeout 15 npm run dev:*)",
+      "WebFetch(domain:sdk.vercel.ai)",
+      "WebFetch(domain:ai-sdk.dev)",
+      "WebSearch",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm check:*)",
+      "Bash(pnpm build:*)",
+      "Bash(bun run build:*)",
+      "Bash(git checkout:*)",
+      "Bash(pnpm exec tsc:*)",
+      "Bash(pnpm run check:*)",
+      "Bash(timeout 10 pnpm run dev:*)",
+      "Bash(pnpm run build:*)",
+      "Bash(git show:*)",
+      "Bash(bun install:*)"
     ]
   }
 }
