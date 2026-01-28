@@ -16,6 +16,8 @@ export interface EditorSettings {
 	autoFormatting: boolean;      // Auto-format LaTeX commands
 	wordWrap: boolean;            // Enable line wrapping
 	stickyScroll: boolean;        // Keep parent structures visible
+	inlineDiffs: boolean;         // Show inline diff previews for AI suggestions
+	selectionPopover: boolean;    // Show "Ask about selection" popover on text selection
 }
 
 export interface ModelSettings {
@@ -45,7 +47,9 @@ const defaultEditorSettings: EditorSettings = {
 	realtimeCompilation: false,
 	autoFormatting: false,
 	wordWrap: true,
-	stickyScroll: true
+	stickyScroll: true,
+	inlineDiffs: true,
+	selectionPopover: true
 };
 
 const defaultModelSettings: ModelSettings = {
@@ -146,12 +150,16 @@ function createSettingsStore() {
 		setAutoFormatting: (v: boolean) => setEditorSetting('autoFormatting', v),
 		setWordWrap: (v: boolean) => setEditorSetting('wordWrap', v),
 		setStickyScroll: (v: boolean) => setEditorSetting('stickyScroll', v),
+		setInlineDiffs: (v: boolean) => setEditorSetting('inlineDiffs', v),
+		setSelectionPopover: (v: boolean) => setEditorSetting('selectionPopover', v),
 		toggleLightMode: () => toggleEditorSetting('lightMode'),
 		toggleVimMode: () => toggleEditorSetting('vimMode'),
 		toggleRealtimeCompilation: () => toggleEditorSetting('realtimeCompilation'),
 		toggleAutoFormatting: () => toggleEditorSetting('autoFormatting'),
 		toggleWordWrap: () => toggleEditorSetting('wordWrap'),
 		toggleStickyScroll: () => toggleEditorSetting('stickyScroll'),
+		toggleInlineDiffs: () => toggleEditorSetting('inlineDiffs'),
+		toggleSelectionPopover: () => toggleEditorSetting('selectionPopover'),
 		// Model settings
 		toggleModel: (modelId: string) =>
 			update((s) => {

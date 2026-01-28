@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { settingsStore } from '$lib/stores';
-	import { Settings, Sun, Moon, Keyboard, RefreshCw, Code, WrapText, Pin } from 'lucide-svelte';
+	import { Settings, Sun, Moon, Keyboard, RefreshCw, Code, WrapText, Pin, GitCompare, MessageSquareText } from 'lucide-svelte';
 
 	let open = $state(false);
 	let dropdownRef: HTMLDivElement;
@@ -153,6 +153,42 @@
 					</div>
 					<div class="w-10 h-6 rounded-full transition-colors duration-200 {$settingsStore.editor.stickyScroll ? 'bg-primary' : 'bg-muted'} relative">
 						<div class="absolute top-1 w-4 h-4 rounded-full bg-background shadow-sm transition-all duration-200 {$settingsStore.editor.stickyScroll ? 'left-5' : 'left-1'}"></div>
+					</div>
+				</button>
+
+				<!-- Inline Diffs -->
+				<button
+					type="button"
+					class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-muted/50 transition-all duration-200"
+					onclick={() => settingsStore.toggleInlineDiffs()}
+				>
+					<div class="flex items-center gap-3">
+						<GitCompare class="h-4 w-4 text-muted-foreground" />
+						<div class="text-left">
+							<div class="text-sm font-medium">Inline Diffs</div>
+							<div class="text-xs text-muted-foreground">Show AI suggestions in editor</div>
+						</div>
+					</div>
+					<div class="w-10 h-6 rounded-full transition-colors duration-200 {$settingsStore.editor.inlineDiffs ? 'bg-primary' : 'bg-muted'} relative">
+						<div class="absolute top-1 w-4 h-4 rounded-full bg-background shadow-sm transition-all duration-200 {$settingsStore.editor.inlineDiffs ? 'left-5' : 'left-1'}"></div>
+					</div>
+				</button>
+
+				<!-- Selection Popover -->
+				<button
+					type="button"
+					class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-muted/50 transition-all duration-200"
+					onclick={() => settingsStore.toggleSelectionPopover()}
+				>
+					<div class="flex items-center gap-3">
+						<MessageSquareText class="h-4 w-4 text-muted-foreground" />
+						<div class="text-left">
+							<div class="text-sm font-medium">Selection Chat</div>
+							<div class="text-xs text-muted-foreground">Ask about highlighted text</div>
+						</div>
+					</div>
+					<div class="w-10 h-6 rounded-full transition-colors duration-200 {$settingsStore.editor.selectionPopover ? 'bg-primary' : 'bg-muted'} relative">
+						<div class="absolute top-1 w-4 h-4 rounded-full bg-background shadow-sm transition-all duration-200 {$settingsStore.editor.selectionPopover ? 'left-5' : 'left-1'}"></div>
 					</div>
 				</button>
 			</div>

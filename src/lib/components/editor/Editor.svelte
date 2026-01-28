@@ -295,8 +295,8 @@
 			if (from !== to) {
 				editorStore.setSelection({ from, to });
 
-				// Handle selection for popover - only if the callback is provided
-				if (onAskAboutSelection) {
+				// Handle selection for popover - only if callback is provided AND setting is enabled
+				if (onAskAboutSelection && $settingsStore.editor.selectionPopover) {
 					const selectedText = update.state.sliceDoc(from, to);
 					// Get the position of the selection end for positioning the popover
 					const coords = update.view.coordsAtPos(to);
@@ -444,15 +444,29 @@
 		}
 	});
 
-	// Sync pending changes to inline diffs
+	// Sync pending changes to inline diffs (respects inlineDiffs setting)
 	$effect(() => {
 		if (!view) return;
 
+		const inlineDiffsEnabled = $settingsStore.editor.inlineDiffs;
 		const changes = $pendingChanges;
 		const currentContent = view.state.doc.toString();
 		const currentChangeIds = new Set(changes.map((c) => c.id));
 		let newDisplayedIds = new Set(displayedChangeIds);
 		let changed = false;
+
+		// If inline diffs are disabled, clear all displayed diffs
+		if (!inlineDiffsEnabled) {
+			for (const id of displayedChangeIds) {
+				view.dispatch({
+					effects: [removeInlineDiff.of(id)]
+				});
+			}
+			if (displayedChangeIds.size > 0) {
+				displayedChangeIds = new Set();
+			}
+			return;
+		}
 
 		// Remove diffs for changes that are no longer pending
 		for (const id of displayedChangeIds) {
