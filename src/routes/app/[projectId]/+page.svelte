@@ -43,6 +43,14 @@
 	// PDF viewer reference for linked scrolling
 	let pdfViewerRef: PdfViewer;
 
+	// Chat panel reference for selection questions
+	let chatPanelRef: ChatPanel;
+
+	// Handle ask about selection from editor
+	function handleAskAboutSelection(selection: string, question: string) {
+		chatPanelRef?.askAboutSelection(selection, question);
+	}
+
 	// Linked scroll state
 	let linkedScroll = $state(false);
 	let isScrollingSynced = false; // Prevent infinite loops
@@ -736,13 +744,27 @@
 
 		<!-- Editor Area with floating chat -->
 		<div class="flex-1 overflow-hidden relative z-10">
-			{#if $activeFile}
+			{#if $settingsStore.layout.chatFullscreen}
+				<!-- Fullscreen chat replaces editor -->
+				<ChatPanel
+					bind:this={chatPanelRef}
+					projectId={data.project.id}
+					conversationId={data.conversation?.id}
+					currentFile={$activeFile}
+					editorContent={currentEditorContent}
+					onContentChange={handleContentChange}
+					onNavigateToChange={handleNavigateToChange}
+					onExitFullscreen={() => settingsStore.setChatFullscreen(false)}
+					mode="fullscreen"
+				/>
+			{:else if $activeFile}
 				<Editor
 					bind:this={editorRef}
 					content={$activeFile.content}
 					format={data.project.format}
 					onchange={handleContentChange}
 					onScroll={handleEditorScroll}
+					onAskAboutSelection={handleAskAboutSelection}
 				/>
 			{:else}
 				<div class="flex flex-1 items-center justify-center text-muted-foreground h-full">
@@ -753,6 +775,7 @@
 			<!-- Chat Panel floats over the editor (only in bottom mode, not in fullscreen) -->
 			{#if $settingsStore.layout.chatPosition === 'bottom' && !$settingsStore.layout.chatFullscreen}
 				<ChatPanel
+					bind:this={chatPanelRef}
 					projectId={data.project.id}
 					conversationId={data.conversation?.id}
 					currentFile={$activeFile}
@@ -775,6 +798,7 @@
 	{#if $settingsStore.layout.chatPosition === 'side' && !$settingsStore.layout.chatFullscreen}
 		<div class="w-80 border-r border-border flex flex-col bg-background shrink-0">
 			<ChatPanel
+				bind:this={chatPanelRef}
 				projectId={data.project.id}
 				conversationId={data.conversation?.id}
 				currentFile={$activeFile}
@@ -814,20 +838,6 @@
 		{/if}
 	</div>
 </div>
-
-<!-- Fullscreen Chat Mode -->
-{#if $settingsStore.layout.chatFullscreen}
-	<ChatPanel
-		projectId={data.project.id}
-		conversationId={data.conversation?.id}
-		currentFile={$activeFile}
-		editorContent={currentEditorContent}
-		onContentChange={handleContentChange}
-		onNavigateToChange={handleNavigateToChange}
-		onExitFullscreen={() => settingsStore.setChatFullscreen(false)}
-		mode="fullscreen"
-	/>
-{/if}
 
 <!-- New File Dialog -->
 <Dialog bind:open={showNewFileDialog} title="New File">

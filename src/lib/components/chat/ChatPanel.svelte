@@ -21,6 +21,15 @@
 
 	let { projectId, conversationId, currentFile, editorContent, onContentChange, onNavigateToChange, onExitFullscreen, mode = 'floating' }: Props = $props();
 
+	// Expose method to ask about selection from external components
+	export function askAboutSelection(selection: string, question: string) {
+		// Format the message with selection context
+		const formattedMessage = `About this code snippet:\n\`\`\`\n${selection}\n\`\`\`\n\n${question}`;
+		inputValue = formattedMessage;
+		chatExpanded = true;
+		sendMessage();
+	}
+
 	const supabase = createSupabaseClient();
 
 	// Use editorContent prop if provided, otherwise fall back to currentFile.content
@@ -315,77 +324,74 @@
 	}
 </script>
 
-<!-- Fullscreen Mode -->
+<!-- Fullscreen Mode (replaces editor panel) -->
 {#if mode === 'fullscreen'}
-	<div class="fixed inset-0 z-50 flex flex-col bg-background">
-		<div class="flex flex-col h-full bg-background overflow-hidden">
-			<!-- Fullscreen Header -->
-			<div class="h-12 flex items-center justify-between px-4 border-b border-border-subtle shrink-0">
+	<div class="flex flex-col h-full bg-background overflow-hidden">
+		<!-- Header with close button -->
+		<div class="flex items-center justify-between px-4 py-2 bg-muted/30 border-b border-border/30 shrink-0">
+			<div class="flex items-center gap-3">
 				<button
 					type="button"
-					class="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+					class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors"
 					onclick={() => onExitFullscreen?.()}
 				>
 					<ArrowLeft class="h-4 w-4" />
-					<span>Back to editor</span>
+					Back to Editor
 				</button>
-				<span class="text-sm text-muted-foreground">
-					{currentFile?.path || 'Chat'}
-				</span>
-			</div>
 
-			<!-- Chat Content -->
-			<div class="flex-1 flex flex-col min-h-0">
-				<!-- Minimal Header -->
-				<div class="flex items-center justify-between px-3 py-1.5 bg-muted/30 border-b border-border/20 shrink-0">
-					<div class="flex items-center gap-2">
-						<div class="relative" bind:this={modelDropdownRef}>
-							<button
-								type="button"
-								class="flex items-center gap-1 px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors"
-								onclick={() => (showModelDropdown = !showModelDropdown)}
-							>
-								<span>{currentModel.name}</span>
-								<ChevronDown class="h-3 w-3 opacity-50" />
-							</button>
+				<div class="h-5 w-px bg-border/50"></div>
 
-							{#if showModelDropdown}
-								<div class="absolute top-full left-0 mt-1 py-1 bg-background border border-border/50 rounded-lg shadow-xl min-w-[180px] max-h-56 overflow-auto z-50">
-									{#each AVAILABLE_MODELS as model}
-										<button
-											type="button"
-											class="flex items-center justify-between w-full px-2.5 py-1.5 text-xs transition-colors {$chatStore.selectedModel === model.id ? 'text-foreground bg-muted/50' : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'}"
-											onclick={() => {
-												chatStore.setModel(model.id);
-												showModelDropdown = false;
-											}}
-										>
-											<span>{model.name}</span>
-											{#if $chatStore.selectedModel === model.id}
-												<span class="text-primary text-[10px]">●</span>
-											{/if}
-										</button>
-									{/each}
-								</div>
-							{/if}
-						</div>
-
-						{#if currentFile}
-							<span class="text-[10px] text-muted-foreground/60 truncate max-w-24">
-								{currentFile.path}
-							</span>
-						{/if}
-					</div>
-
+				<div class="relative" bind:this={modelDropdownRef}>
 					<button
 						type="button"
-						class="p-1 text-muted-foreground/60 hover:text-destructive rounded transition-colors"
-						onclick={clearChat}
-						title="Clear"
+						class="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors"
+						onclick={() => (showModelDropdown = !showModelDropdown)}
 					>
-						<Trash2 class="h-3 w-3" />
+						<span>{currentModel.name}</span>
+						<ChevronDown class="h-3 w-3 opacity-50" />
 					</button>
+
+					{#if showModelDropdown}
+						<div class="absolute top-full left-0 mt-1 py-1 bg-background border border-border/50 rounded-lg shadow-xl min-w-[180px] max-h-56 overflow-auto z-50">
+							{#each AVAILABLE_MODELS as model}
+								<button
+									type="button"
+									class="flex items-center justify-between w-full px-2.5 py-1.5 text-xs transition-colors {$chatStore.selectedModel === model.id ? 'text-foreground bg-muted/50' : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'}"
+									onclick={() => {
+										chatStore.setModel(model.id);
+										showModelDropdown = false;
+									}}
+								>
+									<span>{model.name}</span>
+									{#if $chatStore.selectedModel === model.id}
+										<span class="text-primary text-[10px]">●</span>
+									{/if}
+								</button>
+							{/each}
+						</div>
+					{/if}
 				</div>
+			</div>
+
+			<div class="flex items-center gap-2">
+				{#if currentFile}
+					<span class="text-xs text-muted-foreground">
+						{currentFile.path}
+					</span>
+				{/if}
+				<button
+					type="button"
+					class="p-1.5 text-muted-foreground hover:text-destructive rounded-lg transition-colors"
+					onclick={clearChat}
+					title="Clear chat"
+				>
+					<Trash2 class="h-4 w-4" />
+				</button>
+			</div>
+		</div>
+
+		<!-- Chat Content -->
+		<div class="flex-1 flex flex-col min-h-0">
 
 				<!-- Messages -->
 				<div bind:this={scrollContainer} class="flex-1 overflow-auto min-h-0">
@@ -407,7 +413,6 @@
 						{/if}
 					</div>
 				</div>
-			</div>
 
 			<!-- Code Changes Panel -->
 			{#if $pendingChanges.length > 0 && currentFile}

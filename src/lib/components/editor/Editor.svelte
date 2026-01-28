@@ -42,18 +42,26 @@
 		codeChangeToInlineDiff
 	} from './inline-diff';
 	import { applyCodeChange } from '$lib/utils/code-apply';
+	import SelectionPopover from './SelectionPopover.svelte';
 
 	interface Props {
 		content: string;
 		format: 'latex' | 'typst';
 		onchange?: (content: string) => void;
 		onScroll?: (percent: number) => void;
+		onAskAboutSelection?: (selection: string, question: string) => void;
 	}
 
-	let { content, format, onchange, onScroll }: Props = $props();
+	let { content, format, onchange, onScroll, onAskAboutSelection }: Props = $props();
 
 	let editorContainer: HTMLDivElement;
 	let view = $state<EditorView | null>(null);
+
+	// Selection popover state
+	let showSelectionPopover = $state(false);
+	let selectionText = $state('');
+	let selectionPosition = $state({ x: 0, y: 0 });
+	let selectionTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	// Expose gotoLine for external navigation
 	export function gotoLine(lineNumber: number) {
@@ -74,6 +82,44 @@
 			if (scroller.scrollHeight > scroller.clientHeight) {
 				scroller.scrollTop = percent * (scroller.scrollHeight - scroller.clientHeight);
 			}
+		}
+	}
+
+	// Handle selection for popover
+	function handleSelectionChange(selectedText: string, coords: { x: number; y: number } | null) {
+		// Clear any pending timeout
+		if (selectionTimeout) {
+			clearTimeout(selectionTimeout);
+			selectionTimeout = null;
+		}
+
+		if (selectedText && selectedText.trim().length > 0 && coords && onAskAboutSelection) {
+			// Delay showing the popover slightly to avoid flicker
+			selectionTimeout = setTimeout(() => {
+				selectionText = selectedText;
+				selectionPosition = coords;
+				showSelectionPopover = true;
+			}, 300);
+		} else {
+			showSelectionPopover = false;
+			selectionText = '';
+		}
+	}
+
+	function handleAskAboutSelection(question: string) {
+		if (selectionText && onAskAboutSelection) {
+			onAskAboutSelection(selectionText, question);
+			showSelectionPopover = false;
+			selectionText = '';
+		}
+	}
+
+	function closeSelectionPopover() {
+		showSelectionPopover = false;
+		selectionText = '';
+		if (selectionTimeout) {
+			clearTimeout(selectionTimeout);
+			selectionTimeout = null;
 		}
 	}
 	let languageCompartment = new Compartment();
@@ -248,8 +294,22 @@
 			const { from, to } = update.state.selection.main;
 			if (from !== to) {
 				editorStore.setSelection({ from, to });
+
+				// Handle selection for popover - only if the callback is provided
+				if (onAskAboutSelection) {
+					const selectedText = update.state.sliceDoc(from, to);
+					// Get the position of the selection end for positioning the popover
+					const coords = update.view.coordsAtPos(to);
+					if (coords) {
+						handleSelectionChange(selectedText, { x: coords.left, y: coords.bottom + 8 });
+					}
+				}
 			} else {
 				editorStore.setSelection(null);
+				// Close popover when selection is cleared
+				if (showSelectionPopover) {
+					closeSelectionPopover();
+				}
 			}
 		});
 	}
@@ -442,6 +502,16 @@
 </script>
 
 <div bind:this={editorContainer} class="h-full w-full overflow-hidden"></div>
+
+<!-- Selection Popover -->
+{#if showSelectionPopover && selectionText}
+	<SelectionPopover
+		selectedText={selectionText}
+		position={selectionPosition}
+		onAsk={handleAskAboutSelection}
+		onClose={closeSelectionPopover}
+	/>
+{/if}
 
 <style>
 	:global(.cm-editor) {
