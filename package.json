@@ -1,7 +1,9 @@
 {
-  "name": "prism-clone",
-  "version": "0.0.1",
-  "private": true,
+  "name": "openprism",
+  "version": "1.0.0",
+  "description": "A minimal, modern editor for LaTeX and Typst with AI assistance and real-time preview",
+  "author": "Jesus Remon",
+  "license": "MIT",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",

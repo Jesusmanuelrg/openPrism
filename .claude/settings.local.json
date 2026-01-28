@@ -31,7 +31,8 @@
       "Bash(pkill:*)",
       "Bash(git diff:*)",
       "Bash(git fetch:*)",
-      "Bash(npx svelte-check:*)"
+      "Bash(npx svelte-check:*)",
+      "Bash(ls:*)"
     ]
   }
 }

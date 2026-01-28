@@ -21,7 +21,7 @@ A minimal, modern editor for LaTeX and Typst with AI assistance and real-time pr
 - **Editor**: [CodeMirror 6](https://codemirror.net/)
 - **PDF Rendering**: [PDF.js](https://mozilla.github.io/pdf.js/)
 - **Database**: [Supabase](https://supabase.com/)
-- **AI**: OpenAI API (GPT-4)
+- **AI**: OpenRouter (supports multiple models including GPT-4, Claude, etc.)
 - **LaTeX Compilation**: Server-side LaTeX compiler
 - **Typst Compilation**: Client-side via WebAssembly
 
@@ -32,17 +32,20 @@ A minimal, modern editor for LaTeX and Typst with AI assistance and real-time pr
 - Node.js 18+
 - npm or pnpm
 - Supabase account
-- OpenAI API key
+- OpenRouter API key
 
 ### Environment Variables
 
-Create a `.env` file in the root directory:
+Create a `.env` file in the root directory (see `.env.example`):
 
 ```env
-PUBLIC_SUPABASE_URL=your_supabase_url
-PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-OPENAI_API_KEY=your_openai_api_key
+PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+OPENROUTER_API_KEY=your-openrouter-api-key
 ```
+
+You can get an OpenRouter API key at [openrouter.ai](https://openrouter.ai/).
 
 ### Database Setup
 
@@ -118,7 +121,8 @@ create policy "Users can manage bibliography in their projects"
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/openprism.git
+git clone https://github.com/Jesusmanuelrg/OpenPrism.git
+
 cd openprism
 
 # Install dependencies
