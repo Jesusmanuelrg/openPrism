@@ -1,14 +1,20 @@
-import { StreamLanguage } from '@codemirror/language';
+import { StreamLanguage, type StringStream } from '@codemirror/language';
+
+interface LatexState {
+	inMath: boolean;
+	inEnvironment: boolean;
+	environmentName: string;
+}
 
 const latexMode = {
-	startState: function () {
+	startState: function (): LatexState {
 		return {
 			inMath: false,
 			inEnvironment: false,
 			environmentName: ''
 		};
 	},
-	token: function (stream: any, state: any) {
+	token: function (stream: StringStream, state: LatexState): string | null {
 		// Handle comments
 		if (stream.match('%')) {
 			stream.skipToEnd();

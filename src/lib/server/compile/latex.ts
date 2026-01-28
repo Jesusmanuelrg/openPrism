@@ -1,19 +1,18 @@
+import { LATEX_COMPILE_URL, LATEX_COMPILE_TIMEOUT } from '$lib/config';
+
 export interface CompileResult {
 	pdf?: ArrayBuffer;
 	log: string;
 	errors: string[];
 }
 
-const COMPILE_TIMEOUT = 60000; // 60 seconds
-
 export async function compileLatex(source: string): Promise<CompileResult> {
 	try {
 		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), COMPILE_TIMEOUT);
+		const timeoutId = setTimeout(() => controller.abort(), LATEX_COMPILE_TIMEOUT);
 
 		try {
-			// Use latex.ytotech.com API (latex-on-http)
-			const response = await fetch('https://latex.ytotech.com/builds/sync', {
+			const response = await fetch(LATEX_COMPILE_URL, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'

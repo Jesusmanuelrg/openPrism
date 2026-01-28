@@ -6,6 +6,7 @@ export interface ProjectState {
 	files: ProjectFile[];
 	bibliography: Bibliography[];
 	activeFileId: string | null;
+	openFileIds: string[];
 	loading: boolean;
 	saving: boolean;
 	error: string | null;
@@ -16,6 +17,7 @@ const initialState: ProjectState = {
 	files: [],
 	bibliography: [],
 	activeFileId: null,
+	openFileIds: [],
 	loading: false,
 	saving: false,
 	error: null
@@ -34,6 +36,27 @@ function createProjectStore() {
 			update((state) => ({ ...state, bibliography })),
 		setActiveFile: (fileId: string | null) =>
 			update((state) => ({ ...state, activeFileId: fileId })),
+		openFile: (fileId: string) =>
+			update((state) => ({
+				...state,
+				activeFileId: fileId,
+				openFileIds: state.openFileIds.includes(fileId)
+					? state.openFileIds
+					: [...state.openFileIds, fileId]
+			})),
+		closeFile: (fileId: string) =>
+			update((state) => {
+				const newOpenIds = state.openFileIds.filter((id) => id !== fileId);
+				// If closing the active file, switch to the previous open file or first one
+				let newActiveId = state.activeFileId;
+				if (state.activeFileId === fileId) {
+					const idx = state.openFileIds.indexOf(fileId);
+					newActiveId = newOpenIds[Math.max(0, idx - 1)] ?? newOpenIds[0] ?? null;
+				}
+				return { ...state, openFileIds: newOpenIds, activeFileId: newActiveId };
+			}),
+		setOpenFileIds: (openFileIds: string[]) =>
+			update((state) => ({ ...state, openFileIds })),
 		updateFile: (fileId: string, content: string) =>
 			update((state) => ({
 				...state,

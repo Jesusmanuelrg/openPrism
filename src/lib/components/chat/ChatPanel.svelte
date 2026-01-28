@@ -7,6 +7,7 @@
 	import { Send, ChevronDown, Trash2, ChevronUp, GripHorizontal } from 'lucide-svelte';
 	import type { ProjectFile } from '$lib/utils/database.types';
 	import { slide } from 'svelte/transition';
+	import { ArrowLeft } from 'lucide-svelte';
 
 	interface Props {
 		projectId: string;
@@ -14,10 +15,12 @@
 		currentFile?: ProjectFile | null;
 		editorContent?: string; // Current editor content, synced from parent
 		onContentChange?: (newContent: string) => void;
-		mode?: 'floating' | 'side'; // Display mode
+		onNavigateToChange?: (lineNumber: number) => void;
+		onExitFullscreen?: () => void;
+		mode?: 'floating' | 'side' | 'fullscreen'; // Display mode
 	}
 
-	let { projectId, conversationId, currentFile, editorContent, onContentChange, mode = 'floating' }: Props = $props();
+	let { projectId, conversationId, currentFile, editorContent, onContentChange, onNavigateToChange, onExitFullscreen, mode = 'floating' }: Props = $props();
 
 	const supabase = createSupabaseClient();
 
@@ -28,11 +31,22 @@
 	let textareaRef: HTMLTextAreaElement;
 	let messagesContainer: HTMLDivElement;
 	let scrollContainer: HTMLDivElement;
-	let chatExpanded = $state(mode === 'side'); // Always expanded in side mode
+	let chatExpanded = $state(mode === 'side' || mode === 'fullscreen'); // Always expanded in side/fullscreen modes
 	let showModelDropdown = $state(false);
 
-	// In side mode, chat is always expanded
-	const isExpanded = $derived(mode === 'side' ? true : chatExpanded);
+	// In side/fullscreen mode, chat is always expanded
+	const isExpanded = $derived(mode === 'side' || mode === 'fullscreen' ? true : chatExpanded);
+
+	// Auto-collapse chat when new pending changes appear (floating mode only)
+	let prevPendingCount = $state(0);
+	$effect(() => {
+		const count = $pendingChanges.length;
+		// Auto-collapse when new changes appear (floating mode only)
+		if (mode === 'floating' && count > prevPendingCount && chatExpanded) {
+			chatExpanded = false;
+		}
+		prevPendingCount = count;
+	});
 	let modelDropdownRef: HTMLDivElement;
 	let chatPanelRef: HTMLDivElement;
 
@@ -303,13 +317,29 @@
 </script>
 
 <!-- Chat Container -->
-<div class={mode === 'floating' ? 'absolute bottom-0 left-0 right-0 mx-3 mb-3 z-20' : 'flex flex-col h-full'}>
+<div class={mode === 'floating' ? 'absolute bottom-0 left-0 right-0 mx-3 mb-3 z-20' : mode === 'fullscreen' ? 'fixed inset-0 z-50 flex flex-col bg-background' : 'flex flex-col h-full'}>
 	<!-- Chat Panel -->
-	<div bind:this={chatPanelRef} class={mode === 'floating' ? 'rounded-xl bg-background/95 backdrop-blur-xl border border-border/50 shadow-xl overflow-hidden' : 'flex flex-col h-full bg-background overflow-hidden'}>
+	<div bind:this={chatPanelRef} class={mode === 'floating' ? 'rounded-xl bg-background/95 backdrop-blur-xl border border-border/50 shadow-xl overflow-hidden' : mode === 'fullscreen' ? 'flex flex-col h-full bg-background overflow-hidden' : 'flex flex-col h-full bg-background overflow-hidden'}>
+		<!-- Fullscreen Header -->
+		{#if mode === 'fullscreen'}
+			<div class="h-12 flex items-center justify-between px-4 border-b border-border-subtle shrink-0">
+				<button
+					type="button"
+					class="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+					onclick={() => onExitFullscreen?.()}
+				>
+					<ArrowLeft class="h-4 w-4" />
+					<span>Back to editor</span>
+				</button>
+				<span class="text-sm text-muted-foreground">
+					{currentFile?.path || 'Chat'}
+				</span>
+			</div>
+		{/if}
 		<!-- Expandable Chat History -->
 		{#if isExpanded}
 			<div
-				class={mode === 'side' ? 'flex-1 flex flex-col min-h-0' : 'border-b border-border/30'}
+				class={mode === 'side' || mode === 'fullscreen' ? 'flex-1 flex flex-col min-h-0' : 'border-b border-border/30'}
 				transition:slide={{ duration: 200 }}
 			>
 				<!-- Resize Handle (only in floating mode) -->
@@ -379,7 +409,7 @@
 				</div>
 
 				<!-- Messages -->
-				<div bind:this={scrollContainer} class={mode === 'side' ? 'flex-1 overflow-auto min-h-0' : 'overflow-auto'} style={mode === 'floating' ? `height: ${chatHeight}px` : ''}>
+				<div bind:this={scrollContainer} class={mode === 'side' || mode === 'fullscreen' ? 'flex-1 overflow-auto min-h-0' : 'overflow-auto'} style={mode === 'floating' ? `height: ${chatHeight}px` : ''}>
 					<div bind:this={messagesContainer} class="flex flex-col gap-3 p-3 min-h-full">
 						{#if $chatStore.messages.length === 0}
 							<div class="text-center text-muted-foreground py-6">
@@ -407,6 +437,7 @@
 				<CodeChanges
 					getCurrentContent={() => currentContent}
 					onApplyChange={handleApplyChange}
+					{onNavigateToChange}
 				/>
 			</div>
 		{/if}

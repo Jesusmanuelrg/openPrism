@@ -2,6 +2,28 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getPaperByDoi, paperToBibTeX, doiToBibTeX, parseBibTeX } from '$lib/server/tools';
 
+interface BibliographyMetadata {
+	title?: string;
+	authors?: Array<{ name: string }>;
+	year?: number;
+	venue?: string;
+	doi?: string;
+	url?: string;
+}
+
+interface BibliographyInsert {
+	project_id: string;
+	cite_key: string;
+	doi?: string;
+	metadata: BibliographyMetadata;
+	raw_bibtex: string | null;
+}
+
+interface BibliographyEntry extends BibliographyInsert {
+	id: string;
+	created_at: string;
+}
+
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const { supabase } = locals;
 
@@ -13,7 +35,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 
 		let citeKey: string;
-		let metadata: Record<string, any>;
+		let metadata: BibliographyMetadata;
 		let rawBibtex: string | null = null;
 
 		if (doi) {
@@ -80,16 +102,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			return json({ error: `Citation key "${citeKey}" already exists` }, { status: 409 });
 		}
 
-		// Insert bibliography entry
-		const { data: entry, error } = await supabase
-			.from('bibliography')
-			.insert({
-				project_id: projectId,
-				cite_key: citeKey,
-				doi: doi || metadata.doi,
-				metadata,
-				raw_bibtex: rawBibtex
-			} as any)
+		// Insert bibliography entry (types not generated for this table)
+		const insertData: BibliographyInsert = {
+			project_id: projectId,
+			cite_key: citeKey,
+			doi: doi || metadata.doi,
+			metadata,
+			raw_bibtex: rawBibtex
+		};
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const { data: entry, error } = await (supabase.from('bibliography') as any)
+			.insert(insertData)
 			.select()
 			.single();
 
@@ -133,8 +156,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		return json({ error: 'Project ID is required' }, { status: 400 });
 	}
 
-	const { data: entries, error } = await supabase
-		.from('bibliography')
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const { data: entries, error } = await (supabase.from('bibliography') as any)
 		.select('*')
 		.eq('project_id', projectId)
 		.order('cite_key');
@@ -143,9 +166,11 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		return json({ error: error.message }, { status: 500 });
 	}
 
+	const typedEntries = entries as BibliographyEntry[];
+
 	if (format === 'bibtex') {
 		// Return as BibTeX file
-		const bibtex = entries
+		const bibtex = typedEntries
 			.map((e) => e.raw_bibtex)
 			.filter(Boolean)
 			.join('\n\n');
@@ -158,5 +183,5 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		});
 	}
 
-	return json(entries);
+	return json(typedEntries);
 };

@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git -C /Users/jesusmanuelrg/Documents/research/openai/prism-clone log --oneline)"
+      "Bash(git -C /Users/jesusmanuelrg/Documents/research/openai/prism-clone log --oneline)",
+      "Bash(git -C /Users/jesusmanuelrg/Documents/research/openai/prism-clone show:*)",
+      "Bash(git -C /Users/jesusmanuelrg/Documents/research/openai/prism-clone log --all --oneline --source -- \".env\")",
+      "Bash(git -C /Users/jesusmanuelrg/Documents/research/openai/prism-clone diff HEAD .env)",
+      "Bash(git -C /Users/jesusmanuelrg/Documents/research/openai/prism-clone status --short)",
+      "Bash(npm run check:*)",
+      "Bash(npm run build:*)",
+      "Bash(tree:*)",
+      "Bash(timeout 15 npm run dev:*)"
     ]
   }
 }

@@ -3,104 +3,20 @@
  * Handles whitespace differences and finds the best match location
  */
 
+import { findBestMatch } from './fuzzy-match';
+
 export interface ApplyResult {
 	success: boolean;
 	content: string;
-	matchedAt?: number; // Line number where match was found
+	matchedAt?: number;
 	error?: string;
 }
 
-/**
- * Normalize whitespace for comparison
- * - Trims leading/trailing whitespace from each line
- * - Collapses multiple spaces to single space
- * - Preserves line structure
- */
 function normalizeWhitespace(code: string): string {
 	return code
 		.split('\n')
 		.map((line) => line.trim().replace(/\s+/g, ' '))
 		.join('\n');
-}
-
-/**
- * Calculate similarity between two strings (0 to 1)
- * Uses Levenshtein-inspired approach for speed
- */
-function similarity(a: string, b: string): number {
-	if (a === b) return 1;
-	if (!a || !b) return 0;
-
-	const longer = a.length > b.length ? a : b;
-	const shorter = a.length > b.length ? b : a;
-
-	if (longer.length === 0) return 1;
-
-	// Use a simplified comparison for performance
-	let matches = 0;
-	const shorterChars = shorter.split('');
-	const longerLower = longer.toLowerCase();
-
-	for (const char of shorterChars) {
-		if (longerLower.includes(char.toLowerCase())) {
-			matches++;
-		}
-	}
-
-	return matches / longer.length;
-}
-
-/**
- * Find the best matching block of lines in the content
- * Returns the start line index and match quality
- */
-function findBestMatch(
-	contentLines: string[],
-	searchLines: string[],
-	minSimilarity = 0.7
-): { startLine: number; endLine: number; score: number } | null {
-	if (searchLines.length === 0) return null;
-
-	const normalizedSearch = searchLines.map((l) => l.trim());
-	let bestMatch: { startLine: number; endLine: number; score: number } | null = null;
-
-	// Slide window through content
-	for (let i = 0; i <= contentLines.length - searchLines.length; i++) {
-		let totalScore = 0;
-		let allMatch = true;
-
-		for (let j = 0; j < searchLines.length; j++) {
-			const contentLine = contentLines[i + j].trim();
-			const searchLine = normalizedSearch[j];
-
-			if (contentLine === searchLine) {
-				totalScore += 1;
-			} else {
-				const lineSimilarity = similarity(contentLine, searchLine);
-				if (lineSimilarity < minSimilarity) {
-					allMatch = false;
-					break;
-				}
-				totalScore += lineSimilarity;
-			}
-		}
-
-		if (allMatch) {
-			const avgScore = totalScore / searchLines.length;
-			if (!bestMatch || avgScore > bestMatch.score) {
-				bestMatch = {
-					startLine: i,
-					endLine: i + searchLines.length - 1,
-					score: avgScore
-				};
-
-				// Perfect match - no need to continue
-				if (avgScore === 1) break;
-			}
-		}
-	}
-
-	return bestMatch;
 }
 
 /**

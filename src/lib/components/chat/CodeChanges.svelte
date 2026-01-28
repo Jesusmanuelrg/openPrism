@@ -1,15 +1,17 @@
 <script lang="ts">
 	import { changesStore, pendingChanges, type CodeChange } from '$lib/stores';
 	import { applyCodeChange } from '$lib/utils/code-apply';
+	import { findBestMatch } from '$lib/utils/fuzzy-match';
 	import { Check, X, AlertCircle, ChevronDown, ChevronUp } from 'lucide-svelte';
 
 	interface Props {
 		getCurrentContent: () => string;
 		onApplyChange?: (change: CodeChange, newContent: string) => void;
+		onNavigateToChange?: (lineNumber: number) => void;
 		class?: string;
 	}
 
-	let { getCurrentContent, onApplyChange, class: className = '' }: Props = $props();
+	let { getCurrentContent, onApplyChange, onNavigateToChange, class: className = '' }: Props = $props();
 
 	// Track expanded state for each change
 	let expandedChanges = $state<Set<string>>(new Set());
@@ -90,6 +92,39 @@
 		const preview = newLines[0].trim();
 		return preview.length > 50 ? preview.substring(0, 50) + '...' : preview;
 	}
+
+	// Find the line number where this change would apply
+	function getChangeLineNumber(change: CodeChange): number | null {
+		if (!change.oldCode || !change.oldCode.trim()) return null;
+
+		const content = getCurrentContent();
+		const contentLines = content.split('\n');
+		const oldLines = change.oldCode.split('\n').filter(l => l.trim() !== '');
+
+		if (oldLines.length === 0) return null;
+
+		// Try exact match first
+		if (content.includes(change.oldCode)) {
+			const matchIndex = content.indexOf(change.oldCode);
+			return content.substring(0, matchIndex).split('\n').length;
+		}
+
+		// Try fuzzy match
+		const match = findBestMatch(contentLines, oldLines);
+		if (match && match.score >= 0.7) {
+			return match.startLine + 1; // Convert to 1-indexed
+		}
+
+		return null;
+	}
+
+	// Handle click on a change to navigate
+	function handleNavigateClick(change: CodeChange) {
+		const lineNumber = getChangeLineNumber(change);
+		if (lineNumber !== null && onNavigateToChange) {
+			onNavigateToChange(lineNumber);
+		}
+	}
 </script>
 
 {#if $pendingChanges.length > 0}
@@ -126,6 +161,7 @@
 				{@const isExpanded = expandedChanges.has(change.id)}
 				{@const error = changeErrors.get(change.id)}
 				{@const diffLines = getDiffLines(change.oldCode, change.newCode)}
+				{@const lineNumber = getChangeLineNumber(change)}
 
 				<div class="border-b border-border/20 last:border-b-0">
 					<!-- Change Header (always visible) -->
@@ -143,14 +179,18 @@
 							{/if}
 						</button>
 
-						<!-- Description/Preview -->
+						<!-- Description/Preview (clickable for navigation) -->
 						<button
 							type="button"
-							class="flex-1 text-left"
-							onclick={() => toggleExpanded(change.id)}
+							class="flex-1 text-left {lineNumber !== null && onNavigateToChange ? 'cursor-pointer' : ''}"
+							onclick={() => handleNavigateClick(change)}
+							title={lineNumber !== null ? `Go to line ${lineNumber}` : undefined}
 						>
 							<span class="text-xs text-foreground truncate block">
 								{change.description || getPreview(change)}
+								{#if lineNumber !== null}
+									<span class="text-muted-foreground/60 ml-1">:L{lineNumber}</span>
+								{/if}
 							</span>
 							{#if !isExpanded}
 								<span class="text-[10px] text-muted-foreground font-mono truncate block mt-0.5">

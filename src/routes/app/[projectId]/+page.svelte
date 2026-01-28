@@ -2,15 +2,16 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
-	import { projectStore, activeFile, chatStore, settingsStore } from '$lib/stores';
+	import { projectStore, activeFile, chatStore, settingsStore, acceptedChanges } from '$lib/stores';
 	import { createSupabaseClient } from '$lib/supabase';
 	import { addToast } from '$lib/components/ui/toast.svelte';
 	import { Input, Dialog, ResizeHandle, LayoutSettings, EditorSettings } from '$lib/components/ui';
 	import Editor from '$lib/components/editor/Editor.svelte';
+	import FileTabs from '$lib/components/editor/FileTabs.svelte';
 	import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
 	import PdfViewer from '$lib/components/preview/PdfViewer.svelte';
 	import FileTree from '$lib/components/sidebar/FileTree.svelte';
-	import { ChevronDown, Plus, Trash2, Home } from 'lucide-svelte';
+	import { ChevronDown, Plus, Trash2, Home, Maximize2, Minimize2, SpellCheck, FileText, BookOpen, Loader2 } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 	import type { ChatMessage } from '$lib/stores/chat';
 	import { compileTypst } from '$lib/utils/typst-compiler';
@@ -36,6 +37,23 @@
 	// Track current editor content for real-time sync with ChatPanel
 	let currentEditorContent = $state<string>('');
 
+	// Editor reference for navigation
+	let editorRef: Editor;
+
+	// AI assistant features state
+	let proofreading = $state(false);
+	let summarizing = $state(false);
+	let searchingLiterature = $state(false);
+	let showLiteratureModal = $state(false);
+	let literatureResults = $state<Array<{
+		paperId: string;
+		title: string;
+		abstract?: string;
+		authors: Array<{ name: string }>;
+		year?: number;
+		url?: string;
+	}>>([]);
+
 	onMount(() => {
 		projectStore.setProject(data.project);
 		projectStore.setFiles(data.files);
@@ -49,9 +67,9 @@
 			});
 		}
 
-		// Set active file to first file
+		// Set active file to first file and open it in tabs
 		if (data.files.length > 0) {
-			projectStore.setActiveFile(data.files[0].id);
+			projectStore.openFile(data.files[0].id);
 		}
 
 		// Close dropdown when clicking outside
@@ -95,6 +113,17 @@
 			realtimeCompileTimeout = setTimeout(() => {
 				untrack(() => compile());
 			}, 2000);
+		}
+	});
+
+	// Auto-recompile when changes are accepted
+	let lastAcceptedCount = $state(0);
+	$effect(() => {
+		const count = $acceptedChanges.length;
+		if (count > lastAcceptedCount) {
+			// New change was accepted, trigger compile
+			lastAcceptedCount = count;
+			untrack(() => compile());
 		}
 	});
 
@@ -211,8 +240,233 @@
 	}
 
 	function selectFile(fileId: string) {
-		projectStore.setActiveFile(fileId);
+		projectStore.openFile(fileId);
 		showFileDropdown = false;
+	}
+
+	function handleNavigateToChange(lineNumber: number) {
+		editorRef?.gotoLine(lineNumber);
+	}
+
+	// AI Assistant: Proofread document
+	async function proofreadDocument() {
+		const file = $activeFile;
+		if (!file || proofreading) return;
+
+		proofreading = true;
+		settingsStore.setChatFullscreen(true);
+
+		// Add user message to chat
+		chatStore.addMessage({
+			role: 'user',
+			content: 'Please proofread this document. Check for grammar, spelling, punctuation, clarity, and academic writing style. Suggest specific corrections.'
+		});
+		chatStore.addMessage({ role: 'assistant', content: '' });
+		chatStore.setLoading(true);
+
+		try {
+			const response = await fetch('/api/chat', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					projectId: data.project.id,
+					message: 'Please proofread this document. Check for grammar, spelling, punctuation, clarity, and academic writing style. Suggest specific corrections with line references where possible.',
+					model: $chatStore.selectedModel,
+					context: {
+						currentFile: { path: file.path, content: file.content },
+						history: $chatStore.messages.slice(0, -2).map((m) => ({
+							role: m.role,
+							content: m.content
+						}))
+					}
+				})
+			});
+
+			if (!response.ok) throw new Error('Failed to proofread');
+
+			const reader = response.body?.getReader();
+			if (!reader) throw new Error('No response body');
+
+			const decoder = new TextDecoder();
+			let buffer = '';
+			let fullContent = '';
+
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split('\n');
+				buffer = lines.pop() || '';
+
+				for (const line of lines) {
+					if (line.startsWith('data: ')) {
+						const lineData = line.slice(6);
+						if (lineData === '[DONE]') continue;
+						try {
+							const parsed = JSON.parse(lineData);
+							if (parsed.content) {
+								fullContent += parsed.content;
+								chatStore.updateLastMessage(fullContent);
+							}
+						} catch { /* ignore */ }
+					}
+				}
+			}
+
+			chatStore.finishStreaming();
+		} catch (error) {
+			chatStore.setError(error instanceof Error ? error.message : 'Proofreading failed');
+			chatStore.finishStreaming();
+		}
+
+		chatStore.setLoading(false);
+		proofreading = false;
+	}
+
+	// AI Assistant: Summarize document
+	async function summarizeDocument() {
+		const file = $activeFile;
+		if (!file || summarizing) return;
+
+		summarizing = true;
+		settingsStore.setChatFullscreen(true);
+
+		chatStore.addMessage({
+			role: 'user',
+			content: 'Please provide a concise summary of this paper/document.'
+		});
+		chatStore.addMessage({ role: 'assistant', content: '' });
+		chatStore.setLoading(true);
+
+		try {
+			const response = await fetch('/api/chat', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					projectId: data.project.id,
+					message: 'Please provide a concise summary of this paper/document. Include: 1) Main objective/research question, 2) Key methodology, 3) Main findings/contributions, 4) Conclusions. Keep it brief but comprehensive.',
+					model: $chatStore.selectedModel,
+					context: {
+						currentFile: { path: file.path, content: file.content },
+						history: $chatStore.messages.slice(0, -2).map((m) => ({
+							role: m.role,
+							content: m.content
+						}))
+					}
+				})
+			});
+
+			if (!response.ok) throw new Error('Failed to summarize');
+
+			const reader = response.body?.getReader();
+			if (!reader) throw new Error('No response body');
+
+			const decoder = new TextDecoder();
+			let buffer = '';
+			let fullContent = '';
+
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split('\n');
+				buffer = lines.pop() || '';
+
+				for (const line of lines) {
+					if (line.startsWith('data: ')) {
+						const lineData = line.slice(6);
+						if (lineData === '[DONE]') continue;
+						try {
+							const parsed = JSON.parse(lineData);
+							if (parsed.content) {
+								fullContent += parsed.content;
+								chatStore.updateLastMessage(fullContent);
+							}
+						} catch { /* ignore */ }
+					}
+				}
+			}
+
+			chatStore.finishStreaming();
+		} catch (error) {
+			chatStore.setError(error instanceof Error ? error.message : 'Summarization failed');
+			chatStore.finishStreaming();
+		}
+
+		chatStore.setLoading(false);
+		summarizing = false;
+	}
+
+	// AI Assistant: Find related literature
+	async function findLiterature() {
+		const file = $activeFile;
+		if (!file || searchingLiterature) return;
+
+		searchingLiterature = true;
+		literatureResults = [];
+
+		try {
+			// Extract keywords from the document title and first few paragraphs
+			const content = file.content;
+			// Try to get title from LaTeX/Typst
+			const titleMatch = content.match(/\\title\{([^}]+)\}/) ||
+			                   content.match(/#\s*set\s+document\s*\(\s*title:\s*"([^"]+)"/) ||
+			                   content.match(/^#\s+(.+)$/m);
+
+			// Get abstract if available
+			const abstractMatch = content.match(/\\begin\{abstract\}([\s\S]*?)\\end\{abstract\}/) ||
+			                      content.match(/\\abstract\{([\s\S]*?)\}/);
+
+			// Build search query from title and abstract
+			let searchQuery = titleMatch?.[1]?.trim() || '';
+			if (abstractMatch) {
+				// Add first 100 chars of abstract
+				searchQuery += ' ' + abstractMatch[1].trim().substring(0, 100);
+			}
+
+			// Fallback: use first 200 chars of content
+			if (!searchQuery.trim()) {
+				searchQuery = content.replace(/[\\#%{}]/g, ' ').substring(0, 200);
+			}
+
+			// Clean up the query
+			searchQuery = searchQuery.replace(/\s+/g, ' ').trim().substring(0, 150);
+
+			// Search both Arxiv and Semantic Scholar
+			const [arxivResponse, ssResponse] = await Promise.allSettled([
+				fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&source=arxiv&limit=5`),
+				fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&source=semantic-scholar&limit=5`)
+			]);
+
+			const results: typeof literatureResults = [];
+
+			if (arxivResponse.status === 'fulfilled' && arxivResponse.value.ok) {
+				const arxivData = await arxivResponse.value.json();
+				results.push(...(arxivData.papers || []));
+			}
+
+			if (ssResponse.status === 'fulfilled' && ssResponse.value.ok) {
+				const ssData = await ssResponse.value.json();
+				results.push(...(ssData.papers || []));
+			}
+
+			// Deduplicate by title similarity
+			const seen = new Set<string>();
+			literatureResults = results.filter(paper => {
+				const key = paper.title.toLowerCase().substring(0, 50);
+				if (seen.has(key)) return false;
+				seen.add(key);
+				return true;
+			}).slice(0, 10);
+
+			showLiteratureModal = true;
+		} catch (error) {
+			addToast('error', 'Failed to search for literature');
+		}
+
+		searchingLiterature = false;
 	}
 
 	async function createFile() {
@@ -241,7 +495,7 @@
 			addToast('error', error.message);
 		} else if (file) {
 			projectStore.addFile(file as any);
-			projectStore.setActiveFile((file as any).id);
+			projectStore.openFile((file as any).id);
 			showNewFileDialog = false;
 			newFileName = '';
 		}
@@ -374,7 +628,62 @@
 			</div>
 
 			<div class="flex items-center gap-2">
+				<!-- AI Assistant Buttons -->
+				<div class="flex items-center gap-1 border-r border-border-subtle pr-2 mr-1">
+					<button
+						type="button"
+						class="p-2 hover:bg-muted rounded-lg transition-all duration-200 disabled:opacity-50"
+						onclick={proofreadDocument}
+						disabled={proofreading || !$activeFile}
+						title="Proofread document"
+					>
+						{#if proofreading}
+							<Loader2 class="h-4 w-4 text-muted-foreground animate-spin" />
+						{:else}
+							<SpellCheck class="h-4 w-4 text-muted-foreground" />
+						{/if}
+					</button>
+					<button
+						type="button"
+						class="p-2 hover:bg-muted rounded-lg transition-all duration-200 disabled:opacity-50"
+						onclick={summarizeDocument}
+						disabled={summarizing || !$activeFile}
+						title="Summarize document"
+					>
+						{#if summarizing}
+							<Loader2 class="h-4 w-4 text-muted-foreground animate-spin" />
+						{:else}
+							<FileText class="h-4 w-4 text-muted-foreground" />
+						{/if}
+					</button>
+					<button
+						type="button"
+						class="p-2 hover:bg-muted rounded-lg transition-all duration-200 disabled:opacity-50"
+						onclick={findLiterature}
+						disabled={searchingLiterature || !$activeFile}
+						title="Find related literature"
+					>
+						{#if searchingLiterature}
+							<Loader2 class="h-4 w-4 text-muted-foreground animate-spin" />
+						{:else}
+							<BookOpen class="h-4 w-4 text-muted-foreground" />
+						{/if}
+					</button>
+				</div>
+
 				<LayoutSettings />
+				<button
+					type="button"
+					class="p-2 hover:bg-muted rounded-lg transition-all duration-200"
+					onclick={() => settingsStore.toggleChatFullscreen()}
+					title={$settingsStore.layout.chatFullscreen ? 'Exit fullscreen chat' : 'Fullscreen chat'}
+				>
+					{#if $settingsStore.layout.chatFullscreen}
+						<Minimize2 class="h-4 w-4 text-muted-foreground" />
+					{:else}
+						<Maximize2 class="h-4 w-4 text-muted-foreground" />
+					{/if}
+				</button>
 				<button
 					type="button"
 					class="text-sm px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg shadow-sm transition-all duration-200 disabled:opacity-50 flex items-center gap-2"
@@ -389,10 +698,20 @@
 			</div>
 		</header>
 
+		<!-- File Tabs -->
+		<FileTabs
+			files={$projectStore.files}
+			openFileIds={$projectStore.openFileIds}
+			activeFileId={$projectStore.activeFileId}
+			onSelect={(fileId) => projectStore.openFile(fileId)}
+			onClose={(fileId) => projectStore.closeFile(fileId)}
+		/>
+
 		<!-- Editor Area with floating chat -->
 		<div class="flex-1 overflow-hidden relative z-10">
 			{#if $activeFile}
 				<Editor
+					bind:this={editorRef}
 					content={$activeFile.content}
 					format={data.project.format}
 					onchange={handleContentChange}
@@ -403,14 +722,15 @@
 				</div>
 			{/if}
 
-			<!-- Chat Panel floats over the editor (only in bottom mode) -->
-			{#if $settingsStore.layout.chatPosition === 'bottom'}
+			<!-- Chat Panel floats over the editor (only in bottom mode, not in fullscreen) -->
+			{#if $settingsStore.layout.chatPosition === 'bottom' && !$settingsStore.layout.chatFullscreen}
 				<ChatPanel
 					projectId={data.project.id}
 					conversationId={data.conversation?.id}
 					currentFile={$activeFile}
 					editorContent={currentEditorContent}
 					onContentChange={handleContentChange}
+					onNavigateToChange={handleNavigateToChange}
 				/>
 			{/if}
 		</div>
@@ -423,8 +743,8 @@
 		onReset={handleResetWidth}
 	/>
 
-	<!-- Chat Panel as Side Column (optional) -->
-	{#if $settingsStore.layout.chatPosition === 'side'}
+	<!-- Chat Panel as Side Column (optional, not in fullscreen) -->
+	{#if $settingsStore.layout.chatPosition === 'side' && !$settingsStore.layout.chatFullscreen}
 		<div class="w-80 border-r border-border flex flex-col bg-background shrink-0">
 			<ChatPanel
 				projectId={data.project.id}
@@ -432,6 +752,7 @@
 				currentFile={$activeFile}
 				editorContent={currentEditorContent}
 				onContentChange={handleContentChange}
+				onNavigateToChange={handleNavigateToChange}
 				mode="side"
 			/>
 		</div>
@@ -462,6 +783,20 @@
 	</div>
 </div>
 
+<!-- Fullscreen Chat Mode -->
+{#if $settingsStore.layout.chatFullscreen}
+	<ChatPanel
+		projectId={data.project.id}
+		conversationId={data.conversation?.id}
+		currentFile={$activeFile}
+		editorContent={currentEditorContent}
+		onContentChange={handleContentChange}
+		onNavigateToChange={handleNavigateToChange}
+		onExitFullscreen={() => settingsStore.setChatFullscreen(false)}
+		mode="fullscreen"
+	/>
+{/if}
+
 <!-- New File Dialog -->
 <Dialog bind:open={showNewFileDialog} title="New File">
 	<form onsubmit={(e) => { e.preventDefault(); createFile(); }}>
@@ -488,4 +823,57 @@
 			</button>
 		</div>
 	</form>
+</Dialog>
+
+<!-- Literature Search Results Modal -->
+<Dialog bind:open={showLiteratureModal} title="Related Literature">
+	<div class="max-h-[60vh] overflow-auto -mx-2 px-2">
+		{#if literatureResults.length === 0}
+			<div class="text-center py-8 text-muted-foreground">
+				<BookOpen class="h-8 w-8 mx-auto mb-2 opacity-50" />
+				<p class="text-sm">No related papers found</p>
+			</div>
+		{:else}
+			<div class="space-y-3">
+				{#each literatureResults as paper (paper.paperId)}
+					<div class="p-3 rounded-lg border border-border/50 hover:bg-muted/30 transition-colors">
+						<a
+							href={paper.url}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="text-sm font-medium text-foreground hover:text-primary transition-colors line-clamp-2"
+						>
+							{paper.title}
+						</a>
+						<div class="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+							{#if paper.year}
+								<span>{paper.year}</span>
+								<span>•</span>
+							{/if}
+							<span class="truncate">
+								{paper.authors.slice(0, 3).map(a => a.name).join(', ')}
+								{#if paper.authors.length > 3}
+									<span> et al.</span>
+								{/if}
+							</span>
+						</div>
+						{#if paper.abstract}
+							<p class="mt-2 text-xs text-muted-foreground line-clamp-3">
+								{paper.abstract}
+							</p>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</div>
+	<div class="flex justify-end mt-4">
+		<button
+			type="button"
+			class="text-sm px-4 py-2 hover:bg-muted rounded-lg transition-all duration-200"
+			onclick={() => (showLiteratureModal = false)}
+		>
+			Close
+		</button>
+	</div>
 </Dialog>

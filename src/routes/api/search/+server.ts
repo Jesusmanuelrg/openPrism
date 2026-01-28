@@ -2,7 +2,12 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { searchSemanticScholar, searchArxiv } from '$lib/server/tools';
 
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, locals }) => {
+	const { session } = await locals.safeGetSession();
+	if (!session) {
+		return json({ error: 'Unauthorized' }, { status: 401 });
+	}
+
 	const query = url.searchParams.get('q');
 	const source = url.searchParams.get('source') || 'semantic-scholar';
 	const limit = parseInt(url.searchParams.get('limit') || '10');

@@ -3,24 +3,21 @@
  * Uses @myriaddreamin/typst.ts for browser-based compilation
  */
 
-// Use 'any' for the $typst instance since TypstSnippet is not exported from the main module
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let $typst: any = null;
+import { TYPST_WASM_CDN } from '$lib/config';
+
+interface TypstInstance {
+	setCompilerInitOptions: (opts: { getModule: () => string }) => void;
+	pdf: (opts: { mainContent: string }) => Promise<Uint8Array | null>;
+	resetShadow: () => Promise<void>;
+}
+
+let $typst: TypstInstance | null = null;
 let initialized = false;
 let initPromise: Promise<void> | null = null;
 
 export interface TypstCompileResult {
 	pdf?: Uint8Array;
 	error?: string;
-}
-
-/**
- * Get the WASM module URL from CDN
- */
-function getWasmModuleUrl(): string {
-	// Use a CDN URL for the WASM module
-	// The typst.ts package version 0.7.0-rc2 corresponds to this WASM version
-	return 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler@0.7.0-rc2/pkg/typst_ts_web_compiler_bg.wasm';
 }
 
 /**
@@ -37,14 +34,11 @@ async function ensureInitialized(): Promise<void> {
 
 	initPromise = (async () => {
 		try {
-			// Dynamically import to avoid SSR issues
 			const typstModule = await import('@myriaddreamin/typst.ts');
-			$typst = typstModule.$typst;
+			$typst = typstModule.$typst as TypstInstance;
 
-			// Set compiler init options to load WASM from CDN
-			const wasmUrl = getWasmModuleUrl();
 			$typst.setCompilerInitOptions({
-				getModule: () => wasmUrl
+				getModule: () => TYPST_WASM_CDN
 			});
 
 			initialized = true;

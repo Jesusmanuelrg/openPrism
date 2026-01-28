@@ -2,7 +2,12 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { compileLatex } from '$lib/server/compile/latex';
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
+	const { session } = await locals.safeGetSession();
+	if (!session) {
+		return json({ error: 'Unauthorized' }, { status: 401 });
+	}
+
 	try {
 		const { source, format } = await request.json();
 

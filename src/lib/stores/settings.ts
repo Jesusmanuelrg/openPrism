@@ -6,6 +6,7 @@ export interface LayoutSettings {
 	filesDisplay: 'dropdown' | 'sidebar';
 	chatPosition: 'bottom' | 'side';
 	panelWidth: number; // 0-100 percentage for left panel
+	chatFullscreen: boolean; // Full-screen chat mode
 }
 
 export interface EditorSettings {
@@ -34,7 +35,8 @@ const MODEL_STORAGE_KEY = 'prism-model-settings';
 const defaultLayoutSettings: LayoutSettings = {
 	filesDisplay: 'dropdown',
 	chatPosition: 'bottom',
-	panelWidth: 50
+	panelWidth: 50,
+	chatFullscreen: false
 };
 
 const defaultEditorSettings: EditorSettings = {
@@ -116,6 +118,12 @@ function createSettingsStore() {
 		});
 	}
 
+	const setEditorSetting = <K extends keyof EditorSettings>(key: K, value: EditorSettings[K]) =>
+		update((s) => ({ ...s, editor: { ...s.editor, [key]: value } }));
+
+	const toggleEditorSetting = (key: keyof EditorSettings) =>
+		update((s) => ({ ...s, editor: { ...s.editor, [key]: !s.editor[key] } }));
+
 	return {
 		subscribe,
 		// Layout settings
@@ -127,31 +135,23 @@ function createSettingsStore() {
 			update((s) => ({ ...s, layout: { ...s.layout, panelWidth: Math.min(80, Math.max(20, panelWidth)) } })),
 		resetPanelWidth: () =>
 			update((s) => ({ ...s, layout: { ...s.layout, panelWidth: 50 } })),
+		setChatFullscreen: (chatFullscreen: boolean) =>
+			update((s) => ({ ...s, layout: { ...s.layout, chatFullscreen } })),
+		toggleChatFullscreen: () =>
+			update((s) => ({ ...s, layout: { ...s.layout, chatFullscreen: !s.layout.chatFullscreen } })),
 		// Editor settings
-		setLightMode: (lightMode: boolean) =>
-			update((s) => ({ ...s, editor: { ...s.editor, lightMode } })),
-		setVimMode: (vimMode: boolean) =>
-			update((s) => ({ ...s, editor: { ...s.editor, vimMode } })),
-		setRealtimeCompilation: (realtimeCompilation: boolean) =>
-			update((s) => ({ ...s, editor: { ...s.editor, realtimeCompilation } })),
-		setAutoFormatting: (autoFormatting: boolean) =>
-			update((s) => ({ ...s, editor: { ...s.editor, autoFormatting } })),
-		setWordWrap: (wordWrap: boolean) =>
-			update((s) => ({ ...s, editor: { ...s.editor, wordWrap } })),
-		setStickyScroll: (stickyScroll: boolean) =>
-			update((s) => ({ ...s, editor: { ...s.editor, stickyScroll } })),
-		toggleLightMode: () =>
-			update((s) => ({ ...s, editor: { ...s.editor, lightMode: !s.editor.lightMode } })),
-		toggleVimMode: () =>
-			update((s) => ({ ...s, editor: { ...s.editor, vimMode: !s.editor.vimMode } })),
-		toggleRealtimeCompilation: () =>
-			update((s) => ({ ...s, editor: { ...s.editor, realtimeCompilation: !s.editor.realtimeCompilation } })),
-		toggleAutoFormatting: () =>
-			update((s) => ({ ...s, editor: { ...s.editor, autoFormatting: !s.editor.autoFormatting } })),
-		toggleWordWrap: () =>
-			update((s) => ({ ...s, editor: { ...s.editor, wordWrap: !s.editor.wordWrap } })),
-		toggleStickyScroll: () =>
-			update((s) => ({ ...s, editor: { ...s.editor, stickyScroll: !s.editor.stickyScroll } })),
+		setLightMode: (v: boolean) => setEditorSetting('lightMode', v),
+		setVimMode: (v: boolean) => setEditorSetting('vimMode', v),
+		setRealtimeCompilation: (v: boolean) => setEditorSetting('realtimeCompilation', v),
+		setAutoFormatting: (v: boolean) => setEditorSetting('autoFormatting', v),
+		setWordWrap: (v: boolean) => setEditorSetting('wordWrap', v),
+		setStickyScroll: (v: boolean) => setEditorSetting('stickyScroll', v),
+		toggleLightMode: () => toggleEditorSetting('lightMode'),
+		toggleVimMode: () => toggleEditorSetting('vimMode'),
+		toggleRealtimeCompilation: () => toggleEditorSetting('realtimeCompilation'),
+		toggleAutoFormatting: () => toggleEditorSetting('autoFormatting'),
+		toggleWordWrap: () => toggleEditorSetting('wordWrap'),
+		toggleStickyScroll: () => toggleEditorSetting('stickyScroll'),
 		// Model settings
 		toggleModel: (modelId: string) =>
 			update((s) => {

@@ -53,6 +53,18 @@
 
 	let editorContainer: HTMLDivElement;
 	let view = $state<EditorView | null>(null);
+
+	// Expose gotoLine for external navigation
+	export function gotoLine(lineNumber: number) {
+		if (view) {
+			const line = view.state.doc.line(Math.min(lineNumber, view.state.doc.lines));
+			view.dispatch({
+				selection: { anchor: line.from },
+				effects: EditorView.scrollIntoView(line.from, { y: 'center' })
+			});
+			view.focus();
+		}
+	}
 	let languageCompartment = new Compartment();
 	let themeCompartment = new Compartment();
 	let vimCompartment = new Compartment();

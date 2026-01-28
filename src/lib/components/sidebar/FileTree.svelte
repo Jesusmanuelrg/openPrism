@@ -44,7 +44,7 @@
 			addToast('error', error.message);
 		} else if (file) {
 			projectStore.addFile(file as any);
-			projectStore.setActiveFile((file as any).id);
+			projectStore.openFile((file as any).id);
 			showNewFileDialog = false;
 			newFileName = '';
 		}
@@ -66,7 +66,7 @@
 	}
 
 	function selectFile(fileId: string) {
-		projectStore.setActiveFile(fileId);
+		projectStore.openFile(fileId);
 	}
 </script>
 

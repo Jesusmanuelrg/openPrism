@@ -16,6 +16,36 @@ export interface SearchResult {
 	offset: number;
 }
 
+interface SemanticScholarPaper {
+	paperId: string;
+	title: string;
+	abstract?: string;
+	authors?: Array<{ name: string; authorId?: string }>;
+	year?: number;
+	citationCount?: number;
+	externalIds?: { DOI?: string };
+	url?: string;
+	venue?: string;
+}
+
+interface SemanticScholarResponse {
+	data?: SemanticScholarPaper[];
+	total?: number;
+	offset?: number;
+}
+
+interface CrossRefAuthor {
+	given?: string;
+	family?: string;
+}
+
+interface CrossRefWork {
+	title?: string[];
+	author?: CrossRefAuthor[];
+	published?: { 'date-parts'?: number[][] };
+	'container-title'?: string[];
+}
+
 export async function searchSemanticScholar(
 	query: string,
 	limit: number = 10,
@@ -49,10 +79,10 @@ export async function searchSemanticScholar(
 		throw new Error(`Semantic Scholar API error: ${response.status}`);
 	}
 
-	const data = await response.json();
+	const data: SemanticScholarResponse = await response.json();
 
 	return {
-		papers: (data.data || []).map((paper: any) => ({
+		papers: (data.data || []).map((paper) => ({
 			paperId: paper.paperId,
 			title: paper.title,
 			abstract: paper.abstract,
@@ -154,8 +184,8 @@ export async function getPaperByDoi(doi: string): Promise<Paper | null> {
 				venue: paper.venue
 			};
 		}
-	} catch {
-		// Fall through to CrossRef
+	} catch (error) {
+		console.warn('Semantic Scholar lookup failed:', error);
 	}
 
 	// Try CrossRef
@@ -165,13 +195,13 @@ export async function getPaperByDoi(doi: string): Promise<Paper | null> {
 
 		if (response.ok) {
 			const data = await response.json();
-			const work = data.message;
+			const work: CrossRefWork = data.message;
 
 			return {
 				paperId: doi,
 				title: work.title?.[0] || '',
 				authors:
-					work.author?.map((a: any) => ({
+					work.author?.map((a) => ({
 						name: `${a.given || ''} ${a.family || ''}`.trim()
 					})) || [],
 				year: work.published?.['date-parts']?.[0]?.[0],
@@ -179,8 +209,8 @@ export async function getPaperByDoi(doi: string): Promise<Paper | null> {
 				venue: work['container-title']?.[0]
 			};
 		}
-	} catch {
-		// Return null if both fail
+	} catch (error) {
+		console.warn('CrossRef lookup failed:', error);
 	}
 
 	return null;
